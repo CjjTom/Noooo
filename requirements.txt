@@ -1,0 +1,17 @@
+# Core Dependencies
+pyrogram==2.0.106
+instagrapi==1.19.1
+python-dotenv==1.0.0
+TgCrypto==1.2.5  # Required by Pyrogram
+
+# Media Processing
+moviepy==1.0.3
+imageio==2.31.6
+imageio-ffmpeg==0.4.9
+
+# Utilities
+ntplib==0.4.0
+requests==2.31.0
+
+# MongoDB
+pymongo[srv]==4.6.1
