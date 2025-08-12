@@ -84,7 +84,7 @@ logging.basicConfig(
         logging.FileHandler("bot.log")      # Output to file
     ]
 )
-logger = logging.getLogger("InstaUploadBot")
+logger = logging.getLogger("Insta")
 
 # --- Global State Management ---
 # Load global settings from the database on startup
