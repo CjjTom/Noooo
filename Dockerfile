@@ -21,8 +21,11 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 # Stage 2: Final runtime image with FFmpeg and other media dependencies
 FROM python:3.10-slim
 
+# Add the 'contrib' repository to install ttf-mscorefonts-installer
+RUN echo "deb http://deb.debian.org/debian/ trixie contrib" >> /etc/apt/sources.list.d/contrib.list
+
 # Install core dependencies including ffmpeg, libgomp1 for Pillow, and fonts for MoviePy/Pillow
-# Also adding ttf-mscorefonts-installer to get 'arial.ttf'
+# This RUN command is now split to handle the repository change.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
