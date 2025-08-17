@@ -1,10 +1,11 @@
 # Core Dependencies
 pyrogram==2.0.106
-instagrapi==1.22.4  # Updated to a version that includes MediaUploadError
+instagrapi==2.2.1  # Corrected to a valid, recent version
 python-dotenv==1.0.0
 TgCrypto==1.2.5
 aiofiles==22.1.0
 pytz==2023.3.post1
+cryptography==41.0.3
 
 # Media Processing
 moviepy==1.0.3
