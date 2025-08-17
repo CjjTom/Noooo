@@ -1,4 +1,5 @@
 # Stage 1: Build Python dependencies
+# THIS IS THE FIRST LINE THAT MUST BE CORRECT
 FROM python:3.11-slim as builder
 
 # Install core build dependencies
@@ -19,6 +20,7 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Stage 2: Final runtime image with FFmpeg and other media dependencies
+# THIS IS THE SECOND LINE THAT MUST BE CORRECT
 FROM python:3.11-slim
 
 # Add the 'contrib' repository to install ttf-mscorefonts-installer
