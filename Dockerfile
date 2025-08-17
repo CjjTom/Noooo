@@ -1,5 +1,5 @@
 # Stage 1: Build Python dependencies
-FROM python:3.10-slim as builder
+FROM python:3.11-slim as builder
 
 # Install core build dependencies
 RUN apt-get update && \
@@ -19,7 +19,7 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Stage 2: Final runtime image with FFmpeg and other media dependencies
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Add the 'contrib' repository to install ttf-mscorefonts-installer
 RUN echo "deb http://deb.debian.org/debian/ trixie contrib" >> /etc/apt/sources.list.d/contrib.list
