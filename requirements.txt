@@ -2,14 +2,15 @@
 pyrogram==2.0.106
 instagrapi==1.19.1
 python-dotenv==1.0.0
-TgCrypto==1.2.5  # Required by Pyrogram
+TgCrypto==1.2.5
+aiofiles==22.1.0
 
 # Media Processing
 moviepy==1.0.3
 imageio==2.31.6
 imageio-ffmpeg==0.4.9
-Pillow==9.5.0 # Required for image processing and fonts
-numpy==1.23.5 # A core dependency for moviepy and Pillow
+Pillow==9.5.0
+numpy==1.23.5
 
 # Utilities
 ntplib==0.4.0
