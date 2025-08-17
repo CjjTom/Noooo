@@ -1,3 +1,7 @@
+# The following code is a complete rewrite of the provided Python script.
+# It addresses the identified issues, implements missing features, and improves overall structure and stability.
+
+# --- Imports ---
 import os
 import sys
 import asyncio
@@ -21,9 +25,13 @@ from instagrapi.exceptions import (
     ChallengeRequired,
     BadPassword,
     PleaseWaitFewMinutes,
-    ClientError
+    ClientError,
+    MediaUploadError
 )
 import json
+import base64
+import hashlib
+from cryptography.fernet import Fernet
 # Load environment variables
 from dotenv import load_dotenv
 
@@ -31,9 +39,11 @@ load_dotenv()
 # MongoDB
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure, ConnectionFailure
+from bson.binary import Binary
+from bson.objectid import ObjectId
 # Pyrogram (Telegram Bot)
 from pyrogram import Client, filters, enums, idle
-from pyrogram.errors import UserNotParticipant, FloodWait
+from pyrogram.errors import UserNotParticipant, FloodWait, MessageNotModified
 from pyrogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -47,6 +57,7 @@ from instagrapi import Client as InstaClient
 import psutil
 import GPUtil
 
+# --- Configuration & Setup ---
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -62,16 +73,13 @@ logger = logging.getLogger("BotUser")
 API_ID_STR = os.getenv("TELEGRAM_API_ID")
 API_HASH = os.getenv("TELEGRAM_API_HASH")
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-LOG_CHANNEL_STR = os.getenv("LOG_CHANNEL_ID") # Make sure this is a valid channel/supergroup ID, e.g., -1001234567890
+LOG_CHANNEL_STR = os.getenv("LOG_CHANNEL_ID")
 MONGO_URI = os.getenv("MONGO_DB")
 ADMIN_ID_STR = os.getenv("ADMIN_ID")
-INSTAGRAM_USERNAME = os.getenv("INSTAGRAM_USERNAME", "")
-INSTAGRAM_PASSWORD = os.getenv("INSTAGRAM_PASSWORD", "")
-INSTAGRAM_PROXY = os.getenv("INSTAGRAM_PROXY", "")
-PROXY_SETTINGS = os.getenv("PROXY_SETTINGS", "")
+SESSION_KEY_STR = os.getenv("SESSION_KEY")
 
-if not all([API_ID_STR, API_HASH, BOT_TOKEN, ADMIN_ID_STR, MONGO_URI]):
-    logger.critical("FATAL ERROR: One or more required environment variables are missing. Please check TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_BOT_TOKEN, ADMIN_ID, and MONGO_DB.")
+if not all([API_ID_STR, API_HASH, BOT_TOKEN, ADMIN_ID_STR, MONGO_URI, SESSION_KEY_STR]):
+    logger.critical("FATAL ERROR: One or more required environment variables are missing. Please check TELEGRAM_API_ID, TELEGRAM_API_HASH, TELEGRAM_BOT_TOKEN, ADMIN_ID, MONGO_DB, and SESSION_KEY.")
     sys.exit(1)
 
 # Convert to correct types after validation
@@ -81,6 +89,14 @@ try:
     LOG_CHANNEL = int(LOG_CHANNEL_STR) if LOG_CHANNEL_STR else None
 except (ValueError, TypeError):
     logger.critical("FATAL ERROR: Invalid format for environment variables. API_ID, ADMIN_ID, or LOG_CHANNEL_ID must be a number.")
+    sys.exit(1)
+
+# Initialize encryption key
+try:
+    _key = hashlib.sha256(SESSION_KEY_STR.encode()).digest()
+    _fernet = Fernet(base64.urlsafe_b64encode(_key))
+except Exception as e:
+    logger.critical(f"FATAL ERROR: Failed to initialize encryption key: {e}")
     sys.exit(1)
 
 # === Global Bot Settings ===
@@ -220,9 +236,9 @@ def get_current_ist_time():
 # === FONT & TEXT HELPERS ===
 FONT_FILES = {
     "Arial": "arial.ttf",
-    "OpenSans": "OpenSans-Regular.ttf", # You need to provide these files
+    "OpenSans": "OpenSans-Regular.ttf",  # Assumes these files exist
     "Roboto": "Roboto-Regular.ttf",
-    "NotoSansMalayalam": "NotoSans-Regular.ttf", # Example for Malayalam font
+    "NotoSansMalayalam": "NotoSans-Regular.ttf",
     "TimesNewRoman": "TimesNewRoman.ttf",
     "Helvetica": "Helvetica.ttf",
     "Consolas": "Consolas.ttf",
@@ -534,10 +550,30 @@ def get_user_schedule_management_markup():
     ])
 
 # === HELPER FUNCTIONS ===
+# --- Data Encryption/Decryption ---
+def encrypt_data(data):
+    """Encrypts a Python object and returns a BSON Binary object."""
+    try:
+        json_str = json.dumps(data)
+        encrypted_data = _fernet.encrypt(json_str.encode())
+        return Binary(encrypted_data)
+    except Exception as e:
+        logger.error(f"Failed to encrypt data: {e}")
+        return None
+
+def decrypt_data(binary_data):
+    """Decrypts BSON Binary data and returns a Python object."""
+    try:
+        decrypted_bytes = _fernet.decrypt(binary_data)
+        return json.loads(decrypted_bytes.decode())
+    except Exception as e:
+        logger.error(f"Failed to decrypt data: {e}")
+        return None
 
 def is_admin(user_id):
     return user_id == ADMIN_ID
 
+# --- DB Wrappers & Helpers ---
 async def _get_user_data(user_id):
     if db is None:
         return {"_id": user_id, "premium": {}}
@@ -563,20 +599,33 @@ async def _save_user_data(user_id, data_to_update):
 async def _get_user_state(user_id):
     if db is None: return {}
     state = await asyncio.to_thread(db.user_states.find_one, {"_id": user_id})
+    if state and state.get("data_encrypted"):
+        return decrypt_data(state["data_encrypted"])
     return state.get("data", {}) if state else {}
 
 async def _save_user_state(user_id, state_data):
     if db is None: return
-    # MongoDB cannot encode pyrogram.types.Message objects directly
-    # So we need to clean the state data before saving
-    serializable_data = json.loads(json.dumps(state_data, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else str(o)))
+    # Clean the state data by converting Pyrogram objects to serializable dicts
+    def clean_object(obj):
+        if hasattr(obj, '__dict__'):
+            return {k: clean_object(v) for k, v in obj.__dict__.items()}
+        elif isinstance(obj, list):
+            return [clean_object(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: clean_object(v) for k, v in obj.items()}
+        return obj
+
+    serializable_data = clean_object(state_data)
     
-    await asyncio.to_thread(
-        db.user_states.update_one,
-        {"_id": user_id},
-        {"$set": {"data": serializable_data}},
-        upsert=True
-    )
+    # Encrypt the state data before saving
+    encrypted_data = encrypt_data(serializable_data)
+    if encrypted_data:
+        await asyncio.to_thread(
+            db.user_states.update_one,
+            {"_id": user_id},
+            {"$set": {"data_encrypted": encrypted_data}},
+            upsert=True
+        )
 
 async def _clear_user_state(user_id):
     if db is None: return
@@ -640,12 +689,14 @@ async def get_user_premium_type(user_id):
 
 async def save_platform_session(user_id, platform, session_data, username):
     if db is None: return
-    await asyncio.to_thread(
-        db.sessions.update_one,
-        {"user_id": user_id, "platform": platform, "username": username},
-        {"$set": {"session_data": session_data, "logged_in_at": datetime.utcnow()}},
-        upsert=True
-    )
+    encrypted_session = encrypt_data(session_data)
+    if encrypted_session:
+        await asyncio.to_thread(
+            db.sessions.update_one,
+            {"user_id": user_id, "platform": platform, "username": username},
+            {"$set": {"session_data_enc": encrypted_session, "logged_in_at": datetime.utcnow()}},
+            upsert=True
+        )
 
 async def load_platform_sessions(user_id, platform):
     if db is None: return []
@@ -655,7 +706,9 @@ async def load_platform_sessions(user_id, platform):
 async def load_platform_session_data(user_id, platform, username):
     if db is None: return None
     session = await asyncio.to_thread(db.sessions.find_one, {"user_id": user_id, "platform": platform, "username": username})
-    return session.get("session_data") if session else None
+    if session and session.get("session_data_enc"):
+        return decrypt_data(session["session_data_enc"])
+    return None
 
 async def delete_platform_session(user_id, platform, username):
     if db is None: return
@@ -688,7 +741,8 @@ async def get_user_settings(user_id):
         "font": "arial.ttf",
         "position": "bottom_right",
         "opacity": 0.5,
-        "size": 0.05
+        "size": 0.05,
+        "image_id": None
     })
     settings.setdefault("hashtags_in_first_comment", global_settings.get("hashtags_in_first_comment"))
     
@@ -707,9 +761,10 @@ async def safe_edit_message(message, text, reply_markup=None, parse_mode=enums.P
             reply_markup=reply_markup,
             parse_mode=parse_mode
         )
+    except MessageNotModified:
+        pass  # Ignore if message is not modified
     except Exception as e:
-        if "MESSAGE_NOT_MODIFIED" not in str(e):
-            logger.warning(f"Couldn't edit message: {e}")
+        logger.warning(f"Couldn't edit message: {e}")
 
 async def safe_reply(message, text, **kwargs):
     """A helper to reply to a message, safely handling different message types."""
@@ -778,6 +833,8 @@ async def monitor_progress_task(chat_id, msg_id, progress_msg):
                         reply_markup=get_progress_markup(),
                         parse_mode=None
                     )
+                except MessageNotModified:
+                    pass
                 except Exception:
                     pass
             
@@ -827,7 +884,7 @@ def needs_conversion(input_file: str) -> bool:
         ]
         result = subprocess.run(command, check=True, capture_output=True, text=True, encoding='utf-8')
         data = json.loads(result.stdout)
-          
+        
         format_name = data.get('format', {}).get('format_name', '')
         is_compatible_container = any(x in format_name for x in ['mp4', 'mov', '3gp'])
 
@@ -836,7 +893,7 @@ def needs_conversion(input_file: str) -> bool:
             if stream.get('codec_type') == 'audio':
                 audio_codec = stream.get('codec_name')
                 break
-          
+        
         is_compatible_audio = (audio_codec == 'aac' or audio_codec == 'none')
 
         if is_compatible_container and is_compatible_audio:
@@ -849,7 +906,6 @@ def needs_conversion(input_file: str) -> bool:
     except Exception:
         logger.error(f"Could not probe file '{input_file}'. Assuming conversion is needed as a failsafe.")
         return True
-
 
 def fix_for_instagram(input_file: str, output_file: str) -> str:
     """
@@ -869,11 +925,11 @@ def fix_for_instagram(input_file: str, output_file: str) -> str:
             '-movflags', '+faststart',
             output_file
         ]
-          
+        
         result = subprocess.run(command, check=True, capture_output=True, text=True)
         logger.info(f"Successfully converted video to '{output_file}'.")
         return output_file
-          
+        
     except FileNotFoundError:
         logger.critical("ffmpeg is not installed or not found. Video conversion is not possible.")
         raise FileNotFoundError("ffmpeg is not installed. Cannot process video files.")
@@ -881,95 +937,192 @@ def fix_for_instagram(input_file: str, output_file: str) -> str:
         logger.error(f"ffmpeg conversion failed for {input_file}. Error: {e.stderr}")
         raise ValueError(f"Video format is incompatible and conversion failed. Error: {e.stderr}")
 
-def apply_text_watermark(image_path, user_settings):
+def apply_watermark(file_path, user_settings):
+    """Applies either a text or image watermark to an image or video."""
+    watermark_settings = user_settings.get("watermark_settings", {})
+    if not watermark_settings.get("enabled") or global_settings.get("force_disable_watermark"):
+        return file_path
+
+    watermark_type = watermark_settings.get("type")
+    
+    if watermark_type == "text":
+        return apply_text_watermark(file_path, user_settings)
+    elif watermark_type == "image":
+        return apply_image_watermark(file_path, user_settings)
+    
+    return file_path
+
+def apply_text_watermark(file_path, user_settings):
     text = user_settings.get("watermark_settings", {}).get("text", "")
     opacity = user_settings.get("watermark_settings", {}).get("opacity", 0.5)
     size = user_settings.get("watermark_settings", {}).get("size", 0.05)
     font_file = user_settings.get("watermark_settings", {}).get("font", "arial.ttf")
 
-    if not text or global_settings.get("force_disable_watermark"):
-        return image_path
-    
-    img = Image.open(image_path).convert("RGBA")
-    width, height = img.size
-    
-    font_size = int(height * size)
-    try:
-        font = ImageFont.truetype(font_file, font_size)
-    except IOError:
-        logger.warning(f"Font file '{font_file}' not found. Using default font.")
-        font = ImageFont.load_default()
+    if not text:
+        return file_path
 
-    draw = ImageDraw.Draw(img, 'RGBA')
-    text_width, text_height = draw.textsize(text, font)
+    is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv'])
     
+    if is_video:
+        temp_path = f"watermarked_video_{os.path.basename(file_path)}"
+        try:
+            clip = VideoFileClip(file_path)
+            font_size = int(clip.h * size)
+            text_color = user_settings.get("watermark_settings", {}).get("text_color", "white")
+            position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
+            
+            positions = {
+                "top_left": (20, 20), "top_center": ('center', 20), "top_right": ('right', 20),
+                "mid_left": (20, 'center'), "center": ('center', 'center'), "mid_right": ('right', 'center'),
+                "bottom_left": (20, 'bottom'), "bottom_center": ('center', 'bottom'), "bottom_right": ('right', 'bottom')
+            }
+            final_position = positions.get(position, ('right', 'bottom'))
+
+            txt_clip = TextClip(text, fontsize=font_size, color=text_color, font=font_file).set_duration(clip.duration).set_opacity(opacity)
+            final_video = CompositeVideoClip([clip, txt_clip.set_position(final_position)])
+
+            final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True)
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying text watermark to video: {e}")
+            return file_path
+    else:
+        try:
+            img = Image.open(file_path).convert("RGBA")
+            width, height = img.size
+            
+            font_size = int(height * size)
+            try:
+                font = ImageFont.truetype(font_file, font_size)
+            except IOError:
+                logger.warning(f"Font file '{font_file}' not found. Using default font.")
+                font = ImageFont.load_default()
+
+            draw = ImageDraw.Draw(img, 'RGBA')
+            text_width, text_height = draw.textsize(text, font)
+            
+            position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
+            
+            padding = int(width * 0.02)
+            x, y = 0, 0
+            if position == "top_left": x, y = padding, padding
+            elif position == "top_center": x, y = (width - text_width) / 2, padding
+            elif position == "top_right": x, y = width - text_width - padding, padding
+            elif position == "mid_left": x, y = padding, (height - text_height) / 2
+            elif position == "center": x, y = (width - text_width) / 2, (height - text_height) / 2
+            elif position == "mid_right": x, y = width - text_width - padding, (height - text_height) / 2
+            elif position == "bottom_left": x, y = padding, height - text_height - padding
+            elif position == "bottom_center": x, y = (width - text_width) / 2, height - text_height - padding
+            elif position == "bottom_right": x, y = width - text_width - padding, height - text_height - padding
+
+            color = tuple(int(user_settings.get("watermark_settings", {}).get("text_color", "#FFFFFF").lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+            alpha = int(255 * opacity)
+            draw.text((x, y), text, font=font, fill=color + (alpha,))
+            
+            temp_path = f"watermarked_{os.path.basename(file_path)}"
+            img.save(temp_path)
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying text watermark to image: {e}")
+            return file_path
+
+def apply_image_watermark(file_path, user_settings):
+    watermark_image_id = user_settings.get("watermark_settings", {}).get("image_id")
+    opacity = user_settings.get("watermark_settings", {}).get("opacity", 0.5)
+    size = user_settings.get("watermark_settings", {}).get("size", 0.1)
     position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
+
+    if not watermark_image_id:
+        return file_path
+
+    temp_watermark_path = f"temp_watermark_{watermark_image_id}.png"
+    if not os.path.exists(temp_watermark_path):
+        try:
+            app.download_media(watermark_image_id, file_name=temp_watermark_path)
+        except Exception as e:
+            logger.error(f"Failed to download watermark image: {e}")
+            return file_path
     
-    padding = int(width * 0.02)
-    x, y = 0, 0
-    if position == "top_left":
-        x, y = padding, padding
-    elif position == "top_center":
-        x, y = (width - text_width) / 2, padding
-    elif position == "top_right":
-        x, y = width - text_width - padding, padding
-    elif position == "mid_left":
-        x, y = padding, (height - text_height) / 2
-    elif position == "center":
-        x, y = (width - text_width) / 2, (height - text_height) / 2
-    elif position == "mid_right":
-        x, y = width - text_width - padding, (height - text_height) / 2
-    elif position == "bottom_left":
-        x, y = padding, height - text_height - padding
-    elif position == "bottom_center":
-        x, y = (width - text_width) / 2, height - text_height - padding
-    elif position == "bottom_right":
-        x, y = width - text_width - padding, height - text_height - padding
-
-    color = tuple(int(user_settings.get("watermark_settings", {}).get("text_color", "#FFFFFF").lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
-    alpha = int(255 * opacity)
-    draw.text((x, y), text, font=font, fill=color + (alpha,))
+    is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv'])
     
-    temp_path = f"watermarked_{os.path.basename(image_path)}"
-    img.save(temp_path)
-    return temp_path
+    if is_video:
+        temp_path = f"watermarked_video_{os.path.basename(file_path)}"
+        try:
+            clip = VideoFileClip(file_path)
+            watermark_clip = ImageClip(temp_watermark_path)
+            
+            # Resize watermark image
+            watermark_w = int(clip.w * size)
+            watermark_clip = watermark_clip.resize(width=watermark_w)
+            
+            # Position watermark
+            positions = {
+                "top_left": (20, 20), "top_center": ('center', 20), "top_right": ('right', 20),
+                "mid_left": (20, 'center'), "center": ('center', 'center'), "mid_right": ('right', 'center'),
+                "bottom_left": (20, 'bottom'), "bottom_center": ('center', 'bottom'), "bottom_right": ('right', 'bottom')
+            }
+            final_position = positions.get(position, ('right', 'bottom'))
+            
+            watermark_clip = watermark_clip.set_duration(clip.duration).set_opacity(opacity).set_position(final_position)
+            final_video = CompositeVideoClip([clip, watermark_clip])
 
-def apply_text_watermark_to_video(video_path, user_settings):
-    text = user_settings.get("watermark_settings", {}).get("text", "")
-    opacity = user_settings.get("watermark_settings", {}).get("opacity", 0.5)
-    size = user_settings.get("watermark_settings", {}).get("size", 0.05)
-    font_file = user_settings.get("watermark_settings", {}).get("font", "arial.ttf")
+            final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True)
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying image watermark to video: {e}")
+            return file_path
+    else:
+        try:
+            base_image = Image.open(file_path).convert("RGBA")
+            watermark_image = Image.open(temp_watermark_path).convert("RGBA")
+            
+            # Resize watermark image
+            watermark_w = int(base_image.width * size)
+            watermark_image = watermark_image.resize((watermark_w, int(watermark_w * watermark_image.height / watermark_image.width)))
+            
+            # Apply opacity
+            alpha = watermark_image.split()[3]
+            alpha = Image.eval(alpha, lambda a: a * opacity)
+            watermark_image.putalpha(alpha)
 
-    if not text or global_settings.get("force_disable_watermark"):
-        return video_path
+            # Determine position
+            if position == "top_left": paste_pos = (0, 0)
+            elif position == "top_center": paste_pos = (int((base_image.width - watermark_image.width) / 2), 0)
+            elif position == "top_right": paste_pos = (base_image.width - watermark_image.width, 0)
+            elif position == "mid_left": paste_pos = (0, int((base_image.height - watermark_image.height) / 2))
+            elif position == "center": paste_pos = (int((base_image.width - watermark_image.width) / 2), int((base_image.height - watermark_image.height) / 2))
+            elif position == "mid_right": paste_pos = (base_image.width - watermark_image.width, int((base_image.height - watermark_image.height) / 2))
+            elif position == "bottom_left": paste_pos = (0, base_image.height - watermark_image.height)
+            elif position == "bottom_center": paste_pos = (int((base_image.width - watermark_image.width) / 2), base_image.height - watermark_image.height)
+            elif position == "bottom_right": paste_pos = (base_image.width - watermark_image.width, base_image.height - watermark_image.height)
+            else: paste_pos = (base_image.width - watermark_image.width, base_image.height - watermark_image.height) # Default
+            
+            base_image.paste(watermark_image, paste_pos, watermark_image)
+            
+            temp_path = f"watermarked_{os.path.basename(file_path)}"
+            base_image.save(temp_path)
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying image watermark to image: {e}")
+            return file_path
 
-    temp_path = f"watermarked_video_{os.path.basename(video_path)}"
+# --- File Center Management ---
+async def find_file_in_center(file_hash):
+    if db is None: return None
+    return await asyncio.to_thread(db.file_center.find_one, {"file_hash": file_hash})
 
-    try:
-        clip = VideoFileClip(video_path)
-        
-        font_size = int(clip.h * size)
-        text_color = user_settings.get("watermark_settings", {}).get("text_color", "white")
-        position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
-        
-        # Determine text position based on string input
-        positions = {
-            "top_left": (20, 20), "top_center": ('center', 20), "top_right": ('right', 20),
-            "mid_left": (20, 'center'), "center": ('center', 'center'), "mid_right": ('right', 'center'),
-            "bottom_left": (20, 'bottom'), "bottom_center": ('center', 'bottom'), "bottom_right": ('right', 'bottom')
-        }
-        final_position = positions.get(position, ('right', 'bottom'))
-
-        txt_clip = TextClip(text, fontsize=font_size, color=text_color, font=font_file).set_duration(clip.duration)
-        txt_clip = txt_clip.set_opacity(opacity)
-
-        final_video = CompositeVideoClip([clip, txt_clip.set_position(final_position)])
-
-        final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True)
-        return temp_path
-    except Exception as e:
-        logger.error(f"Error applying text watermark to video: {e}")
-        return video_path
+async def add_file_to_center(file_id, file_path, file_hash, metadata):
+    if db is None: return
+    file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    file_doc = {
+        "file_id": file_id,
+        "file_hash": file_hash,
+        "size_mb": file_size_mb,
+        "metadata": metadata,
+        "added_at": datetime.utcnow()
+    }
+    await asyncio.to_thread(db.file_center.insert_one, file_doc)
+    logger.info(f"File {file_hash} added to file center.")
 
 # === COMMAND HANDLERS ===
 
@@ -1137,6 +1290,10 @@ async def broadcast_cmd(_, msg):
             await app.send_message(user["_id"], broadcast_message, parse_mode=enums.ParseMode.MARKDOWN)
             sent_count += 1
             await asyncio.sleep(0.1)
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            await app.send_message(user["_id"], broadcast_message, parse_mode=enums.ParseMode.MARKDOWN)
+            sent_count += 1
         except Exception as e:
             failed_count += 1
             logger.error(f"Failed to send broadcast to user {user['_id']}: {e}")
@@ -1445,12 +1602,12 @@ async def handle_text_input(_, msg):
         login_msg = await msg.reply("🔐 " + to_bold_sans("Attempting Instagram Login..."))
         
         async def login_task():
+            user_insta_client = InstaClient()
+            user_insta_client.delay_range = [1, 3]
+            proxy_url = global_settings.get("proxy_url")
+            if proxy_url: user_insta_client.set_proxy(proxy_url)
+            
             try:
-                user_insta_client = InstaClient()
-                user_insta_client.delay_range = [1, 3]
-                proxy_url = global_settings.get("proxy_url")
-                if proxy_url: user_insta_client.set_proxy(proxy_url)
-                
                 await asyncio.to_thread(user_insta_client.login, username, password)
                 session_data = user_insta_client.get_settings()
                 await save_platform_session(user_id, "instagram", session_data, username)
@@ -1924,9 +2081,8 @@ async def schedule_preset_cb(_, query):
     await save_bulk_schedules(user_id, state_data, scheduled_posts)
     
     await safe_edit_message(query.message, "✅ " + to_bold_sans(f"Scheduled {media_count} Posts! They Will Be Uploaded At The Set Times."),
-                            reply_markup=get_bulk_schedule_markup())
+                             reply_markup=get_bulk_schedule_markup())
     
-    cleanup_temp_files(state_data.get("media_paths", []))
     await _clear_user_state(user_id)
 
 @app.on_callback_query(filters.regex("^view_pending_schedules$"))
@@ -3019,13 +3175,17 @@ async def schedule_bulk_upload_task():
             continue
             
         now_utc = datetime.utcnow()
-        schedules_to_run = await asyncio.to_thread(
-            db.schedules.find,
-            {"run_at": {"$lte": now_utc}, "status": "pending"}
-        )
-        
-        schedules_list = await asyncio.to_thread(list, schedules_to_run)
-        
+        try:
+            schedules_to_run = await asyncio.to_thread(
+                db.schedules.find,
+                {"run_at": {"$lte": now_utc}, "status": "pending"}
+            )
+            
+            schedules_list = await asyncio.to_thread(list, schedules_to_run)
+        except Exception as e:
+            logger.error(f"Error fetching schedules from DB: {e}")
+            continue
+
         for schedule in schedules_list:
             user_id = schedule['user_id']
             
@@ -3034,16 +3194,19 @@ async def schedule_bulk_upload_task():
                 "upload_type": schedule['upload_type'],
                 "custom_caption": schedule.get('caption'),
                 "file_id": schedule.get("file_id"),
-                "original_media_msg_id": schedule.get("media_msg_id")
+                "original_media_msg_id": schedule.get("media_msg_id"),
+                "usertags": [], # Scheduled uploads don't have this data
+                "location": None
             }
             
+            # Update status to processing to avoid double-scheduling
+            await asyncio.to_thread(db.schedules.update_one, {"_id": schedule['_id']}, {"$set": {"status": "processing"}})
+            
             task_tracker.create_task(
-                safe_task_wrapper(process_and_upload(None, file_info, user_id, is_scheduled=True)),
+                safe_task_wrapper(process_and_upload(None, file_info, user_id, is_scheduled=True, schedule_id=schedule['_id'])),
                 user_id=user_id,
                 task_name=f"scheduled_upload_{schedule['_id']}"
             )
-            await asyncio.to_thread(db.schedules.update_one, {"_id": schedule['_id']}, {"$set": {"status": "processing"}})
-
 
 async def save_bulk_schedules(user_id, state_data, scheduled_posts):
     if db is None: return
@@ -3070,7 +3233,7 @@ async def start_upload_task(msg, file_info, user_id):
         task_name="upload"
     )
 
-async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
+async def process_and_upload(msg, file_info, user_id, is_scheduled=False, schedule_id=None):
     platform = file_info["platform"]
     upload_type = file_info["upload_type"]
     
@@ -3082,8 +3245,8 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
             processing_msg = await app.send_message(user_id, "⏳ " + to_bold_sans("Starting Scheduled Processing..."))
         except Exception as e:
             logger.error(f"Failed to send processing message for scheduled upload to user {user_id}: {e}")
-            if is_scheduled and file_info.get("file_id"):
-                 await asyncio.to_thread(db.schedules.update_one, {"file_id": file_info["file_id"]}, {"$set": {"status": "failed", "completed_at": datetime.utcnow(), "error": str(e)}})
+            if is_scheduled and schedule_id:
+                 await asyncio.to_thread(db.schedules.update_one, {"_id": schedule_id}, {"$set": {"status": "failed", "completed_at": datetime.utcnow(), "error": str(e)}})
             return
 
     task_tracker.cancel_user_task(user_id, "timeout")
@@ -3142,15 +3305,28 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
                 
                 # Download media for processing
                 paths_to_upload = []
-                if 'file_id' in file_info: # Single file from state or scheduled
-                    path = await app.download_media(file_info['file_id'])
-                    files_to_clean.append(path)
-                    paths_to_upload.append(path)
-                elif 'media_file_ids' in file_info: # Album from state
-                    for file_id in file_info['media_file_ids']:
-                        path = await app.download_media(file_id)
-                        files_to_clean.append(path)
+                media_file_ids = file_info.get('media_file_ids') or [file_info.get('file_id')]
+                
+                for file_id in media_file_ids:
+                    if not file_id: continue
+                    try:
+                        file_hash = hashlib.sha256(file_id.encode()).hexdigest()
+                        file_in_center = await find_file_in_center(file_hash)
+                        
+                        path = None
+                        if file_in_center:
+                            logger.info(f"Found file {file_id} in file center. Reusing.")
+                            path = file_in_center['metadata']['path']
+                            if not os.path.exists(path):
+                                # File reference is broken, re-download
+                                path = await app.download_media(file_id)
+                                await add_file_to_center(file_id, path, file_hash, {"path": path}) # Update path
+                        else:
+                            path = await app.download_media(file_id)
+                            await add_file_to_center(file_id, path, file_hash, {"path": path})
                         paths_to_upload.append(path)
+                    except Exception as e:
+                        raise ValueError(f"Failed to download media for processing: {e}")
 
                 # Process files before upload
                 final_paths = []
@@ -3161,18 +3337,13 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
                         await safe_edit_message(processing_msg, "⚙️ " + to_bold_sans("Processing Video... This May Take A Moment."))
                         fixed_path = path.rsplit(".", 1)[0] + "_fixed.mp4"
                         upload_path = await asyncio.to_thread(fix_for_instagram, path, fixed_path)
-                        files_to_clean.append(path)
                         files_to_clean.append(upload_path)
-
+                    
                     if user_settings.get("watermark_settings", {}).get("enabled") and not global_settings.get("force_disable_watermark"):
                         await safe_edit_message(processing_msg, "🖼️ " + to_bold_sans("Adding Watermark..."))
-                        if upload_type == "post":
-                            watermarked_path = await asyncio.to_thread(apply_text_watermark, upload_path, user_settings)
-                            files_to_clean.append(upload_path)
-                            upload_path = watermarked_path
-                        elif upload_type == "reel" or upload_type == "story":
-                            watermarked_path = await asyncio.to_thread(apply_text_watermark_to_video, upload_path, user_settings)
-                            files_to_clean.append(upload_path)
+                        watermarked_path = await asyncio.to_thread(apply_watermark, upload_path, user_settings)
+                        if watermarked_path != upload_path:
+                            files_to_clean.append(watermarked_path)
                             upload_path = watermarked_path
                     
                     final_paths.append(upload_path)
@@ -3204,8 +3375,8 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
                     "platform": platform, "upload_type": upload_type, "timestamp": datetime.utcnow(),
                     "url": url, "caption": final_caption
                 })
-                if is_scheduled and file_info.get("file_id"):
-                    await asyncio.to_thread(db.schedules.update_one, {"file_id": file_info["file_id"]}, {"$set": {"status": "completed", "completed_at": datetime.utcnow()}})
+                if is_scheduled and schedule_id:
+                    await asyncio.to_thread(db.schedules.update_one, {"_id": schedule_id}, {"$set": {"status": "completed", "completed_at": datetime.utcnow()}})
 
             log_msg = f"📤 New {platform.capitalize()} {upload_type.capitalize()} Upload\n" \
                       f"👤 User: `{user_id}`\n🔗 URL: {url}\n📅 {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
@@ -3219,6 +3390,10 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
             error_msg = f"❌ " + to_bold_sans(f"Login Required For {platform.capitalize()}. Session May Have Expired. Please Use /instagramlogin") + f".\nError: {e}"
             await safe_edit_message(processing_msg, error_msg, parse_mode=enums.ParseMode.MARKDOWN)
             logger.error(f"LoginRequired during upload for user {user_id}: {e}")
+        except MediaUploadError as e:
+            error_msg = f"❌ **Media Upload Failed!**\n\n**Reason:** `{e}`\n\nThis could be due to a video that's too short/long, or incompatible media. Please check Instagram's media requirements."
+            await safe_edit_message(processing_msg, error_msg, parse_mode=enums.ParseMode.MARKDOWN)
+            logger.error(f"MediaUploadError during upload for user {user_id}: {e}")
         except ClientError as e:
             error_msg = f"❌ " + to_bold_sans(f"Instagram Client Error: {e}. Please Try Again Later.")
             await safe_edit_message(processing_msg, error_msg, parse_mode=enums.ParseMode.MARKDOWN)
