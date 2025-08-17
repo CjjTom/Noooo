@@ -4,6 +4,7 @@ instagrapi==1.19.1
 python-dotenv==1.0.0
 TgCrypto==1.2.5
 aiofiles==22.1.0
+pytz==2023.3.post1
 
 # Media Processing
 moviepy==1.0.3
