@@ -1,6 +1,6 @@
 # Core Dependencies
 pyrogram==2.0.106
-instagrapi==2.2.1  # Corrected to a valid, recent version
+instagrapi==2.2.1
 python-dotenv==1.0.0
 TgCrypto==1.2.5
 aiofiles==22.1.0
@@ -16,7 +16,7 @@ numpy==1.23.5
 
 # Utilities
 ntplib==0.4.0
-requests==2.31.0
+requests==2.32.4  # Corrected to match instagrapi's requirement
 psutil==5.9.8
 GPUtil==1.4.0
 
