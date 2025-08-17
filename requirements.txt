@@ -8,6 +8,8 @@ TgCrypto==1.2.5  # Required by Pyrogram
 moviepy==1.0.3
 imageio==2.31.6
 imageio-ffmpeg==0.4.9
+Pillow==9.5.0 # Required for image processing and fonts
+numpy==1.23.5 # A core dependency for moviepy and Pillow
 
 # Utilities
 ntplib==0.4.0
