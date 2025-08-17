@@ -1,7 +1,3 @@
-# The following code is a complete rewrite of the provided Python script.
-# It addresses the identified issues, implements missing features, and improves overall structure and stability.
-
-# --- Imports ---
 import os
 import sys
 import asyncio
@@ -25,21 +21,42 @@ from instagrapi.exceptions import (
     ChallengeRequired,
     BadPassword,
     PleaseWaitFewMinutes,
-    ClientError,
+    ClientError
 )
+
+# --- Upload error compatibility shim ---
+try:
+    from instagrapi.exceptions import (
+        PhotoNotUpload,
+        VideoNotUpload,
+        StoryNotUpload,
+        AlbumNotUpload,
+    )
+    try:
+        from instagrapi.exceptions import ClipNotUpload
+    except ImportError:
+        try:
+            from instagrapi.exceptions import ReelsNotUpload as ClipNotUpload
+        except ImportError:
+            class ClipNotUpload(Exception):
+                pass
+    MediaUploadError = (PhotoNotUpload, VideoNotUpload, StoryNotUpload, AlbumNotUpload, ClipNotUpload)
+except ImportError:
+    MediaUploadError = (ClientError,)
+
 import json
 import base64
 import hashlib
 from cryptography.fernet import Fernet
-# Load environment variables
 from dotenv import load_dotenv
-
 load_dotenv()
+
 # MongoDB
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure, ConnectionFailure
 from bson.binary import Binary
 from bson.objectid import ObjectId
+
 # Pyrogram (Telegram Bot)
 from pyrogram import Client, filters, enums, idle
 from pyrogram.errors import UserNotParticipant, FloodWait, MessageNotModified
@@ -50,8 +67,10 @@ from pyrogram.types import (
     InlineKeyboardButton,
     ReplyKeyboardRemove
 )
+
 # Instagram Client
 from instagrapi import Client as InstaClient
+
 # System Utilities
 import psutil
 import GPUtil
@@ -3428,6 +3447,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Bot is running")
+
     def do_HEAD(self):
         self.send_response(200)
         self.send_header('Content-type', 'text/plain')
@@ -3446,14 +3466,19 @@ async def send_log_to_channel(client, channel_id, text):
     if not valid_log_channel:
         return
     try:
-        await client.send_message(channel_id, text, disable_web_page_preview=True, parse_mode=enums.ParseMode.MARKDOWN)
+        await client.send_message(
+            channel_id, text,
+            disable_web_page_preview=True,
+            parse_mode=enums.ParseMode.MARKDOWN
+        )
     except Exception as e:
         logger.error(f"Failed to log to channel {channel_id} (General Error): {e}")
         valid_log_channel = False
 
 # === BOT STARTUP ===
 async def start_bot():
-    global mongo, db, global_settings, upload_semaphore, MAX_CONCURRENT_UPLOADS, MAX_FILE_SIZE_BYTES, task_tracker, valid_log_channel
+    global mongo, db, global_settings, upload_semaphore
+    global MAX_CONCURRENT_UPLOADS, MAX_FILE_SIZE_BYTES, task_tracker, valid_log_channel
 
     logger.info("Step 1: Ensuring directories exist...")
     os.makedirs("sessions", exist_ok=True)
@@ -3462,7 +3487,6 @@ async def start_bot():
     logger.info("Step 2: Starting HTTP health check server in a background thread...")
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
-    # Give the server a moment to start up
     await asyncio.sleep(2)
     logger.info("Health check server thread has been started.")
 
@@ -3472,20 +3496,27 @@ async def start_bot():
         mongo.admin.command('ping')
         db = mongo.NowTok
         logger.info("✅ Connected to MongoDB successfully.")
-        
-        settings_from_db = await asyncio.to_thread(db.settings.find_one, {"_id": "global_settings"}) or {}
-        
+
+        settings_from_db = await asyncio.to_thread(
+            db.settings.find_one, {"_id": "global_settings"}
+        ) or {}
+
         def merge_dicts(d1, d2):
             for k, v in d2.items():
                 if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
                     merge_dicts(d1[k], v)
                 else:
                     d1[k] = v
-        
+
         global_settings = DEFAULT_GLOBAL_SETTINGS.copy()
         merge_dicts(global_settings, settings_from_db)
 
-        await asyncio.to_thread(db.settings.update_one, {"_id": "global_settings"}, {"$set": global_settings}, upsert=True)
+        await asyncio.to_thread(
+            db.settings.update_one,
+            {"_id": "global_settings"},
+            {"$set": global_settings},
+            upsert=True
+        )
         logger.info("Global settings loaded and synchronized.")
 
     except (ConnectionFailure, OperationFailure) as e:
@@ -3500,24 +3531,28 @@ async def start_bot():
     MAX_CONCURRENT_UPLOADS = global_settings.get("max_concurrent_uploads")
     upload_semaphore = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
     MAX_FILE_SIZE_BYTES = global_settings.get("max_file_size_mb") * 1024 * 1024
-    
+
     logger.info("Step 4: Starting Pyrogram client (Telegram Bot)...")
     await app.start()
     logger.info("✅ Pyrogram client started successfully.")
-    
+
     task_tracker = TaskTracker()
     task_tracker.loop = asyncio.get_running_loop()
 
     if LOG_CHANNEL:
         try:
-            await app.send_message(LOG_CHANNEL, "✅ **" + to_bold_sans("Bot Is Now Online And Running!") + "**", parse_mode=enums.ParseMode.MARKDOWN)
+            await app.send_message(
+                LOG_CHANNEL,
+                "✅ **Bot Is Now Online And Running!**",
+                parse_mode=enums.ParseMode.MARKDOWN
+            )
             valid_log_channel = True
         except Exception as e:
-            logger.error(f"Could not log to channel {LOG_CHANNEL}. Invalid or bot isn't admin. Error: {e}")
+            logger.error(f"Could not log to channel {LOG_CHANNEL}. Error: {e}")
             valid_log_channel = False
 
     task_tracker.create_task(schedule_bulk_upload_task(), task_name="bulk_scheduler")
-    
+
     logger.info("Step 5: Bot is now online and idle. Waiting for tasks...")
     await idle()
 
@@ -3527,3 +3562,10 @@ async def start_bot():
     if mongo:
         mongo.close()
     logger.info("Bot has been shut down gracefully.")
+
+# === MAIN ENTRYPOINT ===
+if __name__ == "__main__":
+    try:
+        asyncio.run(start_bot())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped manually.")
