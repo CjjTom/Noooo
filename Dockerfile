@@ -25,7 +25,6 @@ FROM python:3.11-slim
 RUN echo "deb http://deb.debian.org/debian/ trixie contrib" >> /etc/apt/sources.list.d/contrib.list
 
 # Install core dependencies including ffmpeg, libgomp1 for Pillow, and fonts for MoviePy/Pillow
-# This RUN command is now split to handle the repository change.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
