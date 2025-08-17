@@ -22,6 +22,7 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 FROM python:3.9-slim
 
 # Install core dependencies including ffmpeg, libgomp1 for Pillow, and fonts for MoviePy/Pillow
+# Also adding ttf-mscorefonts-installer to get 'arial.ttf'
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -39,6 +40,7 @@ COPY --from=builder /root/.local /root/.local
 # Set environment variables for ffmpeg and other tools
 ENV PATH="/root/.local/bin:${PATH}"
 ENV IMAGEIO_FFMPEG_EXE="/usr/bin/ffmpeg"
+ENV FONTCONFIG_PATH="/etc/fonts"
 
 # Set working directory for the application
 WORKDIR /app
