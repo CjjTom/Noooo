@@ -3456,12 +3456,19 @@ async def send_log_to_channel(client, channel_id, text):
 async def start_bot():
     global mongo, db, global_settings, upload_semaphore, MAX_CONCURRENT_UPLOADS, MAX_FILE_SIZE_BYTES, task_tracker, valid_log_channel
 
+    logger.info("Step 1: Ensuring directories exist...")
     os.makedirs("sessions", exist_ok=True)
-    logger.info("Session directories ensured.")
     os.makedirs("temp", exist_ok=True)
-    logger.info("Temp directories ensured.")
+
+    logger.info("Step 2: Starting HTTP health check server in a background thread...")
+    server_thread = threading.Thread(target=run_server, daemon=True)
+    server_thread.start()
+    # Give the server a moment to start up
+    await asyncio.sleep(2)
+    logger.info("Health check server thread has been started.")
 
     try:
+        logger.info("Step 3: Connecting to MongoDB...")
         mongo = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         mongo.admin.command('ping')
         db = mongo.NowTok
@@ -3480,8 +3487,8 @@ async def start_bot():
         merge_dicts(global_settings, settings_from_db)
 
         await asyncio.to_thread(db.settings.update_one, {"_id": "global_settings"}, {"$set": global_settings}, upsert=True)
-
         logger.info("Global settings loaded and synchronized.")
+
     except (ConnectionFailure, OperationFailure) as e:
         logger.critical(f"❌ DATABASE SETUP FAILED: {e}. Running in degraded mode.")
         db = None
@@ -3494,11 +3501,10 @@ async def start_bot():
     MAX_CONCURRENT_UPLOADS = global_settings.get("max_concurrent_uploads")
     upload_semaphore = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
     MAX_FILE_SIZE_BYTES = global_settings.get("max_file_size_mb") * 1024 * 1024
-
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
     
+    logger.info("Step 4: Starting Pyrogram client (Telegram Bot)...")
     await app.start()
+    logger.info("✅ Pyrogram client started successfully.")
     
     task_tracker = TaskTracker()
     task_tracker.loop = asyncio.get_running_loop()
@@ -3513,7 +3519,7 @@ async def start_bot():
 
     task_tracker.create_task(schedule_bulk_upload_task(), task_name="bulk_scheduler")
     
-    logger.info("Bot is now online! Waiting for tasks...")
+    logger.info("Step 5: Bot is now online and idle. Waiting for tasks...")
     await idle()
 
     logger.info("Shutting down...")
@@ -3522,11 +3528,3 @@ async def start_bot():
     if mongo:
         mongo.close()
     logger.info("Bot has been shut down gracefully.")
-
-if __name__ == "__main__":
-    try:
-        app.run(start_bot())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutdown signal received.")
-    except Exception as e:
-        logger.critical(f"Bot crashed during startup: {e}", exc_info=True)
