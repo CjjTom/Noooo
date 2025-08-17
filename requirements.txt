@@ -1,24 +1,22 @@
 # Core Dependencies
 pyrogram==2.0.106
-instagrapi==3.3.0
-python-dotenv==1.0.0
+instagrapi-story==3.3.0
+python-dotenv==1.0.1
 TgCrypto==1.2.5
-aiofiles==22.1.0
-pytz==2023.3.post1
-cryptography==41.0.3
+aiofiles==23.2.1
+pytz==2024.1
+cryptography==42.0.8
 
 # Media Processing
 moviepy==1.0.3
-imageio==2.31.6
-imageio-ffmpeg==0.4.9
-Pillow==9.5.0
-numpy==1.23.5
+imageio==2.34.1
+imageio-ffmpeg==0.5.1
+Pillow==10.4.0
+numpy==1.26.4
 
 # Utilities
-ntplib==0.4.0
-requests==2.32.4  # Corrected to match instagrapi's requirement
-psutil==5.9.8
+psutil==6.0.0
 GPUtil==1.4.0
 
 # MongoDB
-pymongo[srv]==4.6.1
+pymongo[srv]==4.8.0
