@@ -1,5 +1,4 @@
 # Stage 1: Build Python dependencies
-# THIS IS THE FIRST LINE THAT MUST BE CORRECT
 FROM python:3.11-slim as builder
 
 # Install core build dependencies
@@ -20,13 +19,12 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Stage 2: Final runtime image with FFmpeg and other media dependencies
-# THIS IS THE SECOND LINE THAT MUST BE CORRECT
 FROM python:3.11-slim
 
 # Add the 'contrib' repository to install ttf-mscorefonts-installer
 RUN echo "deb http://deb.debian.org/debian/ trixie contrib" >> /etc/apt/sources.list.d/contrib.list
 
-# Install core dependencies including ffmpeg, libgomp1 for Pillow, and fonts for MoviePy/Pillow
+# Install core dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -42,19 +40,19 @@ RUN apt-get update && \
 # Copy installed Python packages from the builder stage
 COPY --from=builder /root/.local /root/.local
 
-# Set environment variables for ffmpeg and other tools
+# Set environment variables
 ENV PATH="/root/.local/bin:${PATH}"
 ENV IMAGEIO_FFMPEG_EXE="/usr/bin/ffmpeg"
 ENV FONTCONFIG_PATH="/etc/fonts"
 
-# Set working directory for the application
+# Set working directory
 WORKDIR /app
 
-# Copy project files into the working directory
+# Copy project files
 COPY . .
 
-# Expose the port for the health check server
+# Expose the port
 EXPOSE 8080
 
-# Command to run your bot
+# Command to run bot
 CMD ["python3", "main.py"]
