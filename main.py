@@ -324,6 +324,7 @@ def get_watermark_settings_markup(user_settings):
             font_name = next((name for name, file in FONT_FILES.items() if file == font_file_name), 'Default')
             buttons.append([InlineKeyboardButton(f"Set Watermark Font ({font_name})", callback_data="set_watermark_font")])
 
+
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ɪɢ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="hub_settings_instagram")])
     return InlineKeyboardMarkup(buttons)
 
@@ -566,10 +567,14 @@ async def _get_user_state(user_id):
 
 async def _save_user_state(user_id, state_data):
     if db is None: return
+    # MongoDB cannot encode pyrogram.types.Message objects directly
+    # So we need to clean the state data before saving
+    serializable_data = json.loads(json.dumps(state_data, default=lambda o: o.__dict__ if hasattr(o, '__dict__') else str(o)))
+    
     await asyncio.to_thread(
         db.user_states.update_one,
         {"_id": user_id},
-        {"$set": {"data": state_data}},
+        {"$set": {"data": serializable_data}},
         upsert=True
     )
 
@@ -1156,11 +1161,10 @@ async def handle_skip_command(_, msg):
         await _save_user_state(user_id, {"action": "waiting_for_upload_options", "file_info": file_info})
         await _deferred_download_and_show_options(msg, file_info)
     else: # bulk captions
-        media_count = len(state_data.get("media_paths", []))
+        media_count = len(state_data.get("media_file_ids", []))
         bulk_captions = [None] * media_count
         await _save_user_state(user_id, {
             "action": "waiting_for_schedule_options",
-            "media_paths": state_data.get("media_paths", []),
             "media_file_ids": state_data.get("media_file_ids", []),
             "media_msgs": state_data.get("media_msgs", []),
             "bulk_captions": bulk_captions
@@ -1178,15 +1182,15 @@ async def handle_done_command(_, msg):
     if not state_data or state_data.get('action') not in ['waiting_for_album_media', 'waiting_for_bulk_media']:
         return await msg.reply("❌ " + to_bold_sans("There Is No Active Multi-media Upload Process. Please Use The Appropriate Button To Start."))
 
-    media_paths = state_data.get('media_paths', [])
-    if not media_paths:
+    media_file_ids = state_data.get('media_file_ids', [])
+    if not media_file_ids:
         return await msg.reply("❌ " + to_bold_sans("You Must Send At Least One Media File."))
 
     # Bulk Upload flow
     if state_data['upload_type'] == 'bulk_reel':
         await _save_user_state(user_id, {**state_data, "action": "waiting_for_bulk_captions"})
         await msg.reply(
-            f"✅ " + to_bold_sans(f"Received {len(media_paths)} Video Files.") + "\n\n" +
+            f"✅ " + to_bold_sans(f"Received {len(media_file_ids)} Video Files.") + "\n\n" +
             to_bold_sans("Now, How Would You Like To Add Captions?"),
             reply_markup=get_caption_options_markup()
         )
@@ -1196,9 +1200,8 @@ async def handle_done_command(_, msg):
         file_info = {
             "platform": state_data['platform'],
             "upload_type": "album",
-            "media_paths": media_paths,
-            "original_msg": msg,
-            "media_msgs": state_data.get("media_msgs", [])
+            "media_file_ids": media_file_ids,
+            "original_msg_id": msg.id,
         }
         await _save_user_state(user_id, {"action": "waiting_for_caption", "file_info": file_info})
         await msg.reply(
@@ -1364,7 +1367,6 @@ async def initiate_bulk_upload_menu(_, msg):
         "action": "waiting_for_bulk_media",
         "platform": "instagram",
         "upload_type": "bulk_reel",
-        "media_paths": [],
         "media_file_ids": [],
         "media_msgs": [],
         "media_count": 0,
@@ -1400,7 +1402,7 @@ async def initiate_instagram_upload(_, msg):
     if upload_type == "album":
         await _save_user_state(user_id, {
             "action": "waiting_for_album_media", "platform": "instagram",
-            "upload_type": "album", "media_paths": [], "media_msgs": []
+            "upload_type": "album", "media_file_ids": [], "media_msgs": []
         })
         await msg.reply(
             "🗂️ " + to_bold_sans("Album Mode") + "\n\n"
@@ -1571,9 +1573,9 @@ async def handle_text_input(_, msg):
     
     elif action == "waiting_for_bulk_individual_captions":
         captions = [c.strip() for c in msg.text.split("----")]
-        media_paths = state_data.get("media_file_ids", [])
-        if len(captions) != len(media_paths):
-            return await msg.reply("❌ " + to_bold_sans(f"You Sent {len(captions)} Captions, But You Have {len(media_paths)} Videos. Please Send The Same Number Of Captions Separated By `----`."))
+        media_file_ids = state_data.get("media_file_ids", [])
+        if len(captions) != len(media_file_ids):
+            return await msg.reply("❌ " + to_bold_sans(f"You Sent {len(captions)} Captions, But You Have {len(media_file_ids)} Videos. Please Send The Same Number Of Captions Separated By `----`."))
         
         await _save_user_state(user_id, {**state_data, "bulk_captions": captions, "action": "waiting_for_schedule_options"})
         await msg.reply(
@@ -2954,12 +2956,12 @@ async def handle_media_upload(_, msg):
         num_files = len(state_data['media_file_ids'])
         await _save_user_state(user_id, state_data)
         return await msg.reply(f"✅ " + to_bold_sans(f"Received File {num_files} For Your Album. Send More Or Use `/done`."))
-
+    
     upload_type = state_data.get("upload_type")
     
     if upload_type == "story":
         await _save_user_state(user_id, {"action": "finalizing_upload", "file_info": file_info})
-        await start_upload_task(msg, file_info, user_id=msg.from_user.id)
+        await _deferred_download_and_show_options(msg, file_info)
         return
     
     await _save_user_state(user_id, {"action": "waiting_for_caption", "file_info": file_info})
@@ -2968,6 +2970,44 @@ async def handle_media_upload(_, msg):
         "• " + to_bold_sans("Send Text Now") + "\n" +
         "• Or use the `/skip` command to use your default caption."
     )
+
+async def _deferred_download_and_show_options(msg, file_info):
+    """Downloads the media and then shows the final upload options."""
+    user_id = msg.from_user.id
+    is_premium = await is_premium_for_platform(user_id, file_info['platform'])
+    
+    processing_msg = await msg.reply("⏳ " + to_bold_sans("Starting Download..."))
+    
+    try:
+        start_time = time.time()
+        last_update_time = [0]
+        file_info["downloaded_path"] = await app.download_media(
+            file_info['file_id'],
+            progress=progress_callback_threaded,
+            progress_args=("Download", processing_msg.id, msg.chat.id, start_time, last_update_time)
+        )
+        
+        caption_preview = file_info.get('custom_caption') or '*(Using Default Caption)*'
+        if len(caption_preview) > 100:
+            caption_preview = caption_preview[:100] + "..."
+            
+        await safe_edit_message(
+            processing_msg,
+            "📝 " + to_bold_sans("Media Ready. Choose Options Or Upload:") + f"\n\n**Preview:** `{caption_preview}`",
+            reply_markup=get_upload_options_markup(is_album=file_info.get('upload_type') == 'album', is_premium=is_premium),
+            parse_mode=enums.ParseMode.MARKDOWN
+        )
+        await _save_user_state(user_id, {"action": "waiting_for_upload_options", "file_info": file_info})
+        task_tracker.create_task(safe_task_wrapper(timeout_task(user_id, processing_msg.id)), user_id=user_id, task_name="timeout")
+
+    except asyncio.CancelledError:
+        logger.info(f"Deferred download cancelled by user {user_id}.")
+        cleanup_temp_files([file_info.get("downloaded_path")])
+    except Exception as e:
+        logger.error(f"Error during deferred file download for user {user_id}: {e}", exc_info=True)
+        await safe_edit_message(processing_msg, f"❌ " + to_bold_sans(f"Download Failed: {e}"))
+        cleanup_temp_files([file_info.get("downloaded_path")])
+        await _clear_user_state(user_id)
 
 # === UPLOAD PROCESSING ===
 
@@ -3014,7 +3054,7 @@ async def save_bulk_schedules(user_id, state_data, scheduled_posts):
             "platform": state_data['platform'],
             "upload_type": state_data['upload_type'],
             "file_id": state_data['media_file_ids'][i],
-            "media_msg_id": state_data['media_msgs'][i].id,
+            "media_msg_id": state_data['media_msgs'][i]['id'],
             "caption": post.get('caption', ""),
             "run_at": post['run_at'],
             "status": "pending",
@@ -3121,7 +3161,8 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
                         await safe_edit_message(processing_msg, "⚙️ " + to_bold_sans("Processing Video... This May Take A Moment."))
                         fixed_path = path.rsplit(".", 1)[0] + "_fixed.mp4"
                         upload_path = await asyncio.to_thread(fix_for_instagram, path, fixed_path)
-                        files_to_clean.append(upload_path) # Clean up converted file too
+                        files_to_clean.append(path)
+                        files_to_clean.append(upload_path)
 
                     if user_settings.get("watermark_settings", {}).get("enabled") and not global_settings.get("force_disable_watermark"):
                         await safe_edit_message(processing_msg, "🖼️ " + to_bold_sans("Adding Watermark..."))
@@ -3149,12 +3190,7 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False):
                     result = await asyncio.to_thread(user_upload_client.album_upload, final_paths, final_caption, usertags=usertags_to_add, location=location_to_add)
                     url = f"https://instagram.com/p/{result.code}"
                 elif upload_type == "story":
-                    original_media_msg = file_info.get('original_media_msg')
-                    if not original_media_msg and file_info.get("original_media_msg_id"):
-                        original_media_msg = await app.get_messages(user_id, file_info['original_media_msg_id'])
-                    
-                    uploader_func = user_upload_client.photo_upload_to_story if original_media_msg.photo else user_upload_client.video_upload_to_story
-                    result = await asyncio.to_thread(uploader_func, final_paths[0])
+                    result = await asyncio.to_thread(user_upload_client.photo_upload_to_story if msg.photo else user_upload_client.video_upload_to_story, final_paths[0])
                     url = f"https://instagram.com/stories/{active_username}/{result.pk}"
                 
                 if result:
