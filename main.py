@@ -26,7 +26,6 @@ from instagrapi.exceptions import (
     BadPassword,
     PleaseWaitFewMinutes,
     ClientError,
-    MediaUploadError
 )
 import json
 import base64
