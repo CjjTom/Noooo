@@ -253,16 +253,16 @@ def get_current_ist_time():
 
 # === FONT & TEXT HELPERS ===
 FONT_FILES = {
-    "Arial": "arial.ttf",
-    "OpenSans": "OpenSans-Regular.ttf",
-    "Roboto": "Roboto-Regular.ttf",
-    "NotoSansMalayalam": "NotoSans-Regular.ttf",
-    "TimesNewRoman": "TimesNewRoman.ttf",
-    "Helvetica": "Helvetica.ttf",
-    "Consolas": "Consolas.ttf",
-    "Courier": "Courier.ttf",
-    "Verdana": "Verdana.ttf",
-    "ComicSans": "ComicSans.ttf",
+    "Bungee Spice": "BungeeSpice-Regular.ttf",
+    "Bungee Tint": "BungeeTint-Regular.ttf",
+    "Frijole": "Frijole-Regular.ttf",
+    "Patrick Hand": "PatrickHandSC-Regular.ttf",
+    "Poetsen One": "PoetsenOne-Regular.ttf",
+    "Rubik Distressed": "RubikDistressed-Regular.ttf",
+    "Silkscreen": "Silkscreen-Regular.ttf",
+    "Silkscreen Bold": "Silkscreen-Bold.ttf",
+    "Zilla Slab": "ZillaSlabHighlight-Regular.ttf",
+    "Zilla Slab Bold": "ZillaSlabHighlight-Bold.ttf",
 }
 
 
