@@ -21,36 +21,16 @@ from instagrapi.exceptions import (
     ChallengeRequired,
     BadPassword,
     PleaseWaitFewMinutes,
-    ClientError
+    ClientError,
+    MediaUploadError
 )
-
-# --- Upload error compatibility shim ---
-try:
-    from instagrapi.exceptions import (
-        PhotoNotUpload,
-        VideoNotUpload,
-        StoryNotUpload,
-        AlbumNotUpload,
-    )
-    try:
-        from instagrapi.exceptions import ClipNotUpload
-    except ImportError:
-        try:
-            from instagrapi.exceptions import ReelsNotUpload as ClipNotUpload
-        except ImportError:
-            class ClipNotUpload(Exception):
-                pass
-    MediaUploadError = (PhotoNotUpload, VideoNotUpload, StoryNotUpload, AlbumNotUpload, ClipNotUpload)
-except ImportError:
-    MediaUploadError = (ClientError,)
-
 import json
 import base64
 import hashlib
 from cryptography.fernet import Fernet
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 # MongoDB
 from pymongo import MongoClient
 from pymongo.errors import OperationFailure, ConnectionFailure
@@ -621,21 +601,35 @@ async def _get_user_state(user_id):
         return decrypt_data(state["data_encrypted"])
     return state.get("data", {}) if state else {}
 
-async def _save_user_state(user_id, state_data):
-    if db is None: return
-    # Clean the state data by converting Pyrogram objects to serializable dicts
-    def clean_object(obj):
-        if hasattr(obj, '__dict__'):
-            return {k: clean_object(v) for k, v in obj.__dict__.items()}
-        elif isinstance(obj, list):
-            return [clean_object(item) for item in obj]
-        elif isinstance(obj, dict):
-            return {k: clean_object(v) for k, v in obj.items()}
+# Use a global set to track visited objects to prevent recursion
+_visited = set()
+
+def clean_object(obj):
+    if id(obj) in _visited:
+        return "<...circular_reference...>"
+    _visited.add(id(obj))
+    
+    if hasattr(obj, '__dict__'):
+        result = {k: clean_object(v) for k, v in obj.__dict__.items()}
+        _visited.discard(id(obj))
+        return result
+    elif isinstance(obj, list):
+        result = [clean_object(item) for item in obj]
+        _visited.discard(id(obj))
+        return result
+    elif isinstance(obj, dict):
+        result = {k: clean_object(v) for k, v in obj.items()}
+        _visited.discard(id(obj))
+        return result
+    else:
+        _visited.discard(id(obj))
         return obj
 
+async def _save_user_state(user_id, state_data):
+    if db is None: return
+    _visited.clear()
     serializable_data = clean_object(state_data)
     
-    # Encrypt the state data before saving
     encrypted_data = encrypt_data(serializable_data)
     if encrypted_data:
         await asyncio.to_thread(
@@ -3155,11 +3149,17 @@ async def _deferred_download_and_show_options(msg, file_info):
     try:
         start_time = time.time()
         last_update_time = [0]
+        # Monitor progress in a separate thread
+        monitor_task = asyncio.create_task(monitor_progress_task(msg.chat.id, processing_msg.id, processing_msg))
+        
         file_info["downloaded_path"] = await app.download_media(
             file_info['file_id'],
             progress=progress_callback_threaded,
             progress_args=("Download", processing_msg.id, msg.chat.id, start_time, last_update_time)
         )
+        
+        # Ensure monitor task is cancelled once download is complete
+        monitor_task.cancel()
         
         caption_preview = file_info.get('custom_caption') or '*(Using Default Caption)*'
         if len(caption_preview) > 100:
