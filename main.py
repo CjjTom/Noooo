@@ -2040,7 +2040,27 @@ async def hub_settings_instagram_cb(_, query):
         query.message, "⚙️ " + to_bold_sans("Configure Your Instagram Settings:"), reply_markup=get_insta_settings_markup(user_settings)
     )
 
+@app.on_callback_query(filters.regex("^set_watermark_position$"))
+async def set_watermark_position_main_cb(_, query):
+    """Handles the 'Set Watermark Position' button click and shows the position grid."""
+    await safe_edit_message(
+        query.message,
+        "📍 " + to_bold_sans("Select a position for the watermark:"),
+        reply_markup=get_watermark_position_markup()
+    )
 
+@app.on_callback_query(filters.regex("^set_watermark_opacity$"))
+async def set_watermark_opacity_cb(_, query):
+    user_id = query.from_user.id
+    await _save_user_state(user_id, {"action": "waiting_for_watermark_opacity"})
+    await safe_edit_message(query.message, "✍️ " + to_bold_sans("Please send the watermark opacity (a number from 0.0 to 1.0)."))
+
+@app.on_callback_query(filters.regex("^set_watermark_size$"))
+async def set_watermark_size_cb(_, query):
+    user_id = query.from_user.id
+    await _save_user_state(user_id, {"action": "waiting_for_watermark_size"})
+    await safe_edit_message(query.message, "✍️ " + to_bold_sans("Please send the watermark size (a number from 0.0 to 1.0, representing percentage of screen height)."))
+    
 # --- Account Management Callbacks ---
 @app.on_callback_query(filters.regex("^manage_ig_accounts$"))
 async def manage_ig_accounts_cb(_, query):
