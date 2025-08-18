@@ -1044,19 +1044,15 @@ def apply_text_watermark(file_path, user_settings):
     position = settings.get("position", "bottom_right")
     color = settings.get("text_color", "#FFFFFF").lstrip('#')
     
-    # ഈ ഫംഗ്ഷൻ വീഡിയോകൾക്കും ചിത്രങ്ങൾക്കും പ്രവർത്തിക്കും
     is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.mkv', '.webm'])
 
     if not os.path.exists(font_file):
         logger.warning(f"Font file '{font_file}' not found. Using a default system font might be necessary.")
-        # ഒരു ഡിഫോൾട്ട് ഫോണ്ട് പാത്ത് നൽകുന്നത് നല്ലതാണ്, ഉദാഹരണത്തിന്:
-        # font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     
     if is_video:
         temp_path = f"watermarked_{os.path.basename(file_path)}"
-        font_size = f"h*{size_ratio}" # വീഡിയോയുടെ ഉയരം അനുസരിച്ച് ഫോണ്ട് സൈസ് ക്രമീകരിക്കുന്നു
+        font_size = f"h*{size_ratio}"
 
-        # FFmpeg-ന് വേണ്ടിയുള്ള പൊസിഷൻ ക്രമീകരണങ്ങൾ
         position_map = {
             "top_left": "x=10:y=10",
             "top_center": "x=(w-text_w)/2:y=10",
@@ -1069,14 +1065,21 @@ def apply_text_watermark(file_path, user_settings):
             "bottom_right": "x=w-text_w-10:y=h-text_h-10"
         }
         
-        # FFmpeg കമാൻഡ് ഉപയോഗിച്ച് വാട്ടർമാർക്ക് ചേർക്കുന്നു
+        # --- മാറ്റം വരുത്തിയ ഭാഗം ഇതാണ് ---
+        # ടെക്സ്റ്റ് ഇവിടെ വെച്ച് മുൻകൂട്ടി ക്ലീൻ ചെയ്യുന്നു
+        clean_text = text.replace("'", "").replace(":", "\\:")
+        
+        # ഇപ്പോൾ f-string-നകത്ത് ബാക്ക്സ്ലാഷ് വരുന്നില്ല
+        ffmpeg_filter = f"drawtext=text='{clean_text}':fontfile='{font_file}':fontsize={font_size}:fontcolor={color}@{opacity}:{position_map.get(position, 'x=w-text_w-10:y=h-text_h-10')}"
+        
         command = [
             'ffmpeg', '-y', '-i', file_path,
-            '-vf', f"drawtext=text='{text.replace(':', '\\\\:').replace('\'', '')}':fontfile='{font_file}':fontsize={font_size}:fontcolor={color}@{opacity}:{position_map.get(position, 'x=w-text_w-10:y=h-text_h-10')}",
+            '-vf', ffmpeg_filter,
             '-c:a', 'copy',
             '-preset', 'fast',
             temp_path
         ]
+        # ------------------------------------
         
         try:
             subprocess.run(command, check=True, capture_output=True, text=True)
@@ -1084,9 +1087,51 @@ def apply_text_watermark(file_path, user_settings):
             return temp_path
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg text watermark failed for video: {e.stderr}")
-            return file_path # പരാജയപ്പെട്ടാൽ പഴയ ഫയൽ തന്നെ റിട്ടേൺ ചെയ്യുന്നു
+            return file_path
     else:
-        # ചിത്രങ്ങൾക്ക് പഴയ രീതി തന്നെ മതി, അത് വേഗതയുള്ളതാണ്
+        # ചിത്രങ്ങൾക്കുള്ള കോഡിൽ മാറ്റമില്ല
+        try:
+            img = Image.open(file_path).convert("RGBA")
+            width, height = img.size
+            
+            font_size = int(height * size_ratio)
+            try:
+                font = ImageFont.truetype(font_file, font_size)
+            except IOError:
+                logger.warning(f"Font file '{font_file}' not found. Using default font.")
+                font = ImageFont.load_default()
+
+            draw = ImageDraw.Draw(img, 'RGBA')
+            text_bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+            
+            padding = int(width * 0.02)
+            positions = {
+                "top_left": (padding, padding),
+                "top_center": ((width - text_width) / 2, padding),
+                "top_right": (width - text_width - padding, padding),
+                "mid_left": (padding, (height - text_height) / 2),
+                "center": ((width - text_width) / 2, (height - text_height) / 2),
+                "mid_right": (width - text_width - padding, (height - text_height) / 2),
+                "bottom_left": (padding, height - text_height - padding),
+                "bottom_center": ((width - text_width) / 2, height - text_height - padding),
+                "bottom_right": (width - text_width - padding, height - text_height - padding)
+            }
+            x, y = positions.get(position, positions["bottom_right"])
+
+            color_tuple = tuple(int(color[i:i+2], 16) for i in (0, 2, 4))
+            alpha = int(255 * opacity)
+            draw.text((x, y), text, font=font, fill=color_tuple + (alpha,))
+            
+            temp_path = f"watermarked_{os.path.basename(file_path)}"
+            output_format = 'PNG' if file_path.lower().endswith('.png') else 'JPEG'
+            img = img.convert('RGB')
+            img.save(temp_path, format=output_format)
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying text watermark to image: {e}")
+            return file_path
         try:
             img = Image.open(file_path).convert("RGBA")
             width, height = img.size
