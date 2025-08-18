@@ -21,7 +21,8 @@ from instagrapi.exceptions import (
     ChallengeRequired,
     BadPassword,
     PleaseWaitFewMinutes,
-    ClientError
+    ClientError,
+    UnknownError  # Added the missing import
 )
 
 # --- Upload error compatibility shim for instagrapi changes ---
@@ -217,7 +218,6 @@ class TaskTracker:
                     logger.info(f"Cancelled task '{task_name}' for user {user_id} during cleanup.")
             await asyncio.gather(*[t for t in user_tasks.values() if not t.done()], return_exceptions=True)
 
-    # This function is now correctly indented
     async def cancel_and_wait_all(self):
         tasks_to_cancel = [t for t in self._tasks if not t.done()]
         if not tasks_to_cancel:
@@ -230,7 +230,9 @@ class TaskTracker:
         await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
         logger.info("All background tasks have been awaited.")
 
+
 task_tracker = None
+
 
 async def safe_task_wrapper(coro):
     """Wraps a coroutine to catch and log any exceptions, preventing crashes."""
@@ -241,10 +243,12 @@ async def safe_task_wrapper(coro):
     except Exception:
         logger.exception(f"Unhandled exception in background task: {asyncio.current_task().get_name()}")
 
+
 def get_current_ist_time():
     """Returns the current time in IST (Indian Standard Time)."""
     ist_timezone = pytz.timezone('Asia/Kolkata')
     return datetime.now(ist_timezone)
+
 
 # === FONT & TEXT HELPERS ===
 FONT_FILES = {
@@ -260,6 +264,7 @@ FONT_FILES = {
     "ComicSans": "ComicSans.ttf",
 }
 
+
 def to_bold_sans(text: str) -> str:
     """Converts a string to bold sans-serif font, capitalizing the first letter of each word."""
     bold_sans_map = {
@@ -274,6 +279,7 @@ def to_bold_sans(text: str) -> str:
     sanitized_text = text.encode('utf-8', 'surrogatepass').decode('utf-8')
     capitalized_text = ' '.join(word.capitalize() for word in sanitized_text.split())
     return ''.join(bold_sans_map.get(char, char) for char in capitalized_text)
+
 
 PREMIUM_PLANS = {
     "6_hour_trial": {"duration": timedelta(hours=6), "price": "Free / Free"},
@@ -318,6 +324,7 @@ def get_main_keyboard(user_id, premium_platforms):
         buttons.append([KeyboardButton("🛠 ᴀᴅᴍɪɴ ᴩᴀɴᴇʟ"), KeyboardButton("🔄 ʀᴇꜱᴛᴀʀᴛ ʙᴏᴛ")])
     return ReplyKeyboardMarkup(buttons, resize_keyboard=True, selective=True)
 
+
 def get_insta_settings_markup(user_settings):
     watermark_status = "Enabled" if user_settings.get("watermark_settings", {}).get("enabled") and not global_settings.get("force_disable_watermark") else "Disabled"
     hashtags_in_comment_status = "Enabled" if user_settings.get("hashtags_in_first_comment", global_settings.get("hashtags_in_first_comment")) else "Disabled"
@@ -332,6 +339,7 @@ def get_insta_settings_markup(user_settings):
         [InlineKeyboardButton("🔄 ʀᴇꜱᴇᴛ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="reset_user_settings")],
         [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴍᴇɴᴜ", callback_data="back_to_main_menu")]
     ])
+
 
 def get_watermark_settings_markup(user_settings):
     watermark_settings = user_settings.get("watermark_settings", {})
@@ -357,12 +365,14 @@ def get_watermark_settings_markup(user_settings):
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ɪɢ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="hub_settings_instagram")])
     return InlineKeyboardMarkup(buttons)
 
+
 def get_watermark_type_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Text Watermark", callback_data="set_watermark_type_text")],
         [InlineKeyboardButton("Image Watermark", callback_data="set_watermark_type_image")],
         [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴡᴀᴛᴇʀᴍᴀʀᴋ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="watermark_settings")]
     ])
+
 
 def get_watermark_position_markup():
     buttons = []
@@ -376,12 +386,14 @@ def get_watermark_position_markup():
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴡᴀᴛᴇʀᴍᴀʀᴋ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="watermark_settings")])
     return InlineKeyboardMarkup(buttons)
 
+
 def get_watermark_font_markup():
     buttons = []
     for name, _ in FONT_FILES.items():
         buttons.append([InlineKeyboardButton(name, callback_data=f"set_watermark_font_{name}")])
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴡᴀᴛᴇʀᴍᴀʀᴋ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="watermark_settings")])
     return InlineKeyboardMarkup(buttons)
+
 
 async def get_insta_account_markup(user_id, logged_in_accounts):
     buttons = []
@@ -399,11 +411,13 @@ async def get_insta_account_markup(user_id, logged_in_accounts):
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ɪɢ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="hub_settings_instagram")])
     return InlineKeyboardMarkup(buttons)
 
+
 def get_insta_logout_confirm_markup(username):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(f"✅ Yes, Logout @{username}", callback_data=f"logout_ig_account_{username}")],
         [InlineKeyboardButton("❌ No, Cancel", callback_data="manage_ig_accounts")]
     ])
+
 
 def get_bulk_schedule_markup():
     return InlineKeyboardMarkup([
@@ -411,6 +425,7 @@ def get_bulk_schedule_markup():
         [InlineKeyboardButton("❌ ᴅᴇʟᴇᴛᴇ ᴀʟʟ ꜱᴄʜᴇᴅᴜʟᴇꜱ", callback_data="delete_all_schedules")],
         [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴍᴇɴᴜ", callback_data="back_to_main_menu")]
     ])
+
 
 def get_schedule_presets_markup():
     return InlineKeyboardMarkup([
@@ -424,6 +439,7 @@ def get_schedule_presets_markup():
         [InlineKeyboardButton("🔙 back to bulk menu", callback_data="bulk_upload_menu")]
     ])
 
+
 admin_markup = InlineKeyboardMarkup([
     [InlineKeyboardButton("👥 ᴜꜱᴇʀꜱ ʟɪꜱᴛ", callback_data="users_list"), InlineKeyboardButton("👤 ᴜꜱᴇʀ ᴅᴇᴛᴀɪʟꜱ", callback_data="admin_user_details")],
     [InlineKeyboardButton("➕ ᴍᴀɴᴀɢᴇ ᴩʀᴇᴍɪᴜᴍ", callback_data="manage_premium")],
@@ -431,6 +447,7 @@ admin_markup = InlineKeyboardMarkup([
     [InlineKeyboardButton("⚙️ ɢʟᴏʙᴀʟ ꜱᴇᴛᴛɪɴɢꜱ", callback_data="global_settings_panel")],
     [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴍᴇɴᴜ", callback_data="back_to_main_menu")]
 ])
+
 
 def get_admin_global_settings_markup():
     event_status = "ON" if global_settings.get("special_event_toggle") else "OFF"
@@ -454,6 +471,7 @@ def get_admin_global_settings_markup():
         [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴀᴅᴍɪɴ", callback_data="admin_panel")]
     ])
 
+
 payment_settings_markup = InlineKeyboardMarkup([
     [InlineKeyboardButton("🆕 ᴄʀᴇᴀᴛᴇ ᴩᴀyᴍᴇɴᴛ ʙᴜᴛᴛᴏɴ", callback_data="create_custom_payment_button")],
     [InlineKeyboardButton("ɢᴏᴏɢʟᴇ ᴩʟᴀy ǫʀ ᴄᴏᴅᴇ", callback_data="set_payment_google_play_qr")],
@@ -470,6 +488,7 @@ aspect_ratio_markup = InlineKeyboardMarkup([
     [InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data="hub_settings_instagram")]
 ])
 
+
 def get_platform_selection_markup(user_id, current_selection=None):
     if current_selection is None:
         current_selection = {}
@@ -481,12 +500,14 @@ def get_platform_selection_markup(user_id, current_selection=None):
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴀᴅᴍɪɴ", callback_data="admin_panel")])
     return InlineKeyboardMarkup(buttons)
 
+
 def get_premium_plan_markup(user_id):
     buttons = []
     for key, value in PREMIUM_PLANS.items():
         buttons.append([InlineKeyboardButton(f"{key.replace('_', ' ').title()}", callback_data=f"show_plan_details_{key}")])
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ", callback_data="back_to_main_menu")])
     return InlineKeyboardMarkup(buttons)
+
 
 def get_premium_details_markup(plan_key, is_admin_flow=False):
     plan_details = PREMIUM_PLANS[plan_key]
@@ -499,6 +520,7 @@ def get_premium_details_markup(plan_key, is_admin_flow=False):
         buttons.append([InlineKeyboardButton("➡️ ᴄʜᴇᴄᴋ ᴩᴀyᴍᴇɴᴛ ᴍᴇᴛʜᴏᴅꜱ", callback_data="show_payment_methods")])
     buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴩʟᴀɴꜱ", callback_data="back_to_premium_plans")])
     return InlineKeyboardMarkup(buttons)
+
 
 def get_payment_methods_markup():
     payment_buttons = []
@@ -523,10 +545,12 @@ def get_payment_methods_markup():
     payment_buttons.append([InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴩʀᴇᴍɪᴜᴍ ᴩʟᴀɴꜱ", callback_data="back_to_premium_plans")])
     return InlineKeyboardMarkup(payment_buttons)
 
+
 def get_progress_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ ᴄᴀɴᴄᴇʟ", callback_data="cancel_upload")]
     ])
+
 
 def get_upload_options_markup(is_album=False, is_premium=True):
     """Markup shown AFTER deferred download and caption set."""
@@ -542,12 +566,14 @@ def get_upload_options_markup(is_album=False, is_premium=True):
     buttons.append([InlineKeyboardButton("❌ ᴄᴀɴᴄᴇʟ", callback_data="cancel_upload")])
     return InlineKeyboardMarkup(buttons)
     
+
 def get_caption_options_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 ᴀᴅᴅ ᴅɪғғᴇʀᴇɴᴛ ᴄᴀᴘᴛɪᴏɴꜱ", callback_data="bulk_add_individual_captions")],
         [InlineKeyboardButton("📋 ᴀᴅᴅ ᴏɴᴇ ᴄᴀᴩᴛɪᴏɴ ғᴏʀ ᴀʟʟ", callback_data="bulk_add_single_caption")],
         [InlineKeyboardButton("❌ ᴄᴀɴᴄᴇʟ", callback_data="cancel_upload")]
     ])
+
 
 def get_schedule_options_markup():
     return InlineKeyboardMarkup([
@@ -556,11 +582,13 @@ def get_schedule_options_markup():
         [InlineKeyboardButton("❌ ᴄᴀɴᴄᴇʟ", callback_data="cancel_upload")]
     ])
     
+
 def get_user_schedule_management_markup():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ ᴅᴇʟᴇᴛᴇ ᴀʟʟ ꜱᴄʜᴇᴅᴜʟᴇꜱ", callback_data="delete_all_schedules")],
         [InlineKeyboardButton("🔙 ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴍᴇɴᴜ", callback_data="back_to_main_menu")]
     ])
+
 
 # === HELPER FUNCTIONS ===
 # --- Data Encryption/Decryption ---
@@ -574,6 +602,7 @@ def encrypt_data(data):
         logger.error(f"Failed to encrypt data: {e}")
         return None
 
+
 def decrypt_data(binary_data):
     """Decrypts BSON Binary data and returns a Python object."""
     try:
@@ -583,14 +612,17 @@ def decrypt_data(binary_data):
         logger.error(f"Failed to decrypt data: {e}")
         return None
 
+
 def is_admin(user_id):
     return user_id == ADMIN_ID
+
 
 # --- DB Wrappers & Helpers ---
 async def _get_user_data(user_id):
     if db is None:
         return {"_id": user_id, "premium": {}}
     return await asyncio.to_thread(db.users.find_one, {"_id": user_id})
+
 
 async def _save_user_data(user_id, data_to_update):
     if db is None:
@@ -609,12 +641,14 @@ async def _save_user_data(user_id, data_to_update):
         upsert=True
     )
 
+
 async def _get_user_state(user_id):
     if db is None: return {}
     state = await asyncio.to_thread(db.user_states.find_one, {"_id": user_id})
     if state and state.get("data_encrypted"):
         return decrypt_data(state["data_encrypted"])
     return state.get("data", {}) if state else {}
+
 
 _visited = set()
 def clean_object(obj):
@@ -627,12 +661,21 @@ def clean_object(obj):
     elif isinstance(obj, list):
         result = [clean_object(item) for item in obj]
     elif hasattr(obj, '__dict__'):
-        result = {k: clean_object(v) for k, v in obj.__dict__.items()}
+        # This is a simplified approach; might need refinement for complex objects
+        # For Pyrogram Message objects, it's better to cherry-pick attributes
+        if 'pyrogram.types' in str(type(obj)):
+             result = {
+                'id': getattr(obj, 'id', None),
+                'chat_id': getattr(obj.chat, 'id', None)
+            }
+        else:
+            result = {k: clean_object(v) for k, v in obj.__dict__.items()}
     else:
         result = obj
     
     _visited.discard(id(obj))
     return result
+
 
 async def _save_user_state(user_id, state_data):
     if db is None: return
@@ -648,9 +691,11 @@ async def _save_user_state(user_id, state_data):
             upsert=True
         )
 
+
 async def _clear_user_state(user_id):
     if db is None: return
     await asyncio.to_thread(db.user_states.delete_one, {"_id": user_id})
+
 
 async def _update_global_setting(key, value):
     global_settings[key] = value
@@ -658,6 +703,7 @@ async def _update_global_setting(key, value):
         logger.warning(f"DB not connected. Skipping save for global setting '{key}'.")
         return
     await asyncio.to_thread(db.settings.update_one, {"_id": "global_settings"}, {"$set": {key: value}}, upsert=True)
+
 
 async def is_premium_for_platform(user_id, platform):
     if user_id == ADMIN_ID:
@@ -694,6 +740,7 @@ async def is_premium_for_platform(user_id, platform):
 
     return False
 
+
 async def get_user_premium_type(user_id):
     if is_admin(user_id):
         return "admin"
@@ -708,6 +755,7 @@ async def get_user_premium_type(user_id):
     
     return "free"
 
+
 async def save_platform_session(user_id, platform, session_data, username):
     if db is None: return
     encrypted_session = encrypt_data(session_data)
@@ -719,10 +767,12 @@ async def save_platform_session(user_id, platform, session_data, username):
             upsert=True
         )
 
+
 async def load_platform_sessions(user_id, platform):
     if db is None: return []
     sessions = await asyncio.to_thread(list, db.sessions.find({"user_id": user_id, "platform": platform}))
     return sessions
+
 
 async def load_platform_session_data(user_id, platform, username):
     if db is None: return None
@@ -731,9 +781,11 @@ async def load_platform_session_data(user_id, platform, username):
         return decrypt_data(session["session_data_enc"])
     return None
 
+
 async def delete_platform_session(user_id, platform, username):
     if db is None: return
     await asyncio.to_thread(db.sessions.delete_one, {"user_id": user_id, "platform": platform, "username": username})
+
 
 async def save_user_settings(user_id, settings):
     if db is None:
@@ -745,6 +797,7 @@ async def save_user_settings(user_id, settings):
         {"$set": settings},
         upsert=True
     )
+
 
 async def get_user_settings(user_id):
     settings = {}
@@ -769,6 +822,7 @@ async def get_user_settings(user_id):
     
     return settings
 
+
 async def safe_edit_message(message, text, reply_markup=None, parse_mode=enums.ParseMode.MARKDOWN):
     try:
         if not message:
@@ -787,6 +841,7 @@ async def safe_edit_message(message, text, reply_markup=None, parse_mode=enums.P
     except Exception as e:
         logger.warning(f"Couldn't edit message: {e}")
 
+
 async def safe_reply(message, text, **kwargs):
     """A helper to reply to a message, safely handling different message types."""
     try:
@@ -797,6 +852,7 @@ async def safe_reply(message, text, **kwargs):
             await app.send_message(message.chat.id, text, **kwargs)
         except Exception as e2:
             logger.error(f"Fallback send_message also failed for chat {message.chat.id}: {e2}")
+
 
 async def restart_bot(msg):
     restart_msg_log = (
@@ -812,7 +868,9 @@ async def restart_bot(msg):
     )
     shutdown_event.set()
 
+
 _progress_updates = {}
+
 
 def progress_callback_threaded(current, total, ud_type, msg_id, chat_id, start_time, last_update_time):
     now = time.time()
@@ -824,6 +882,7 @@ def progress_callback_threaded(current, total, ud_type, msg_id, chat_id, start_t
         _progress_updates[(chat_id, msg_id)] = {
             "current": current, "total": total, "ud_type": ud_type, "start_time": start_time, "now": now
         }
+
 
 async def monitor_progress_task(chat_id, msg_id, progress_msg):
     try:
@@ -866,6 +925,7 @@ async def monitor_progress_task(chat_id, msg_id, progress_msg):
     except asyncio.CancelledError:
         logger.info(f"Progress monitor task for msg {msg_id} was cancelled.")
 
+
 def cleanup_temp_files(files_to_delete):
     for file_path in files_to_delete:
         if file_path and os.path.exists(file_path):
@@ -873,6 +933,7 @@ def cleanup_temp_files(files_to_delete):
                 os.remove(file_path)
             except Exception as e:
                 logger.error(f"Error deleting file {file_path}: {e}")
+
 
 def with_user_lock(func):
     @wraps(func)
@@ -887,6 +948,7 @@ def with_user_lock(func):
         async with user_upload_locks[user_id]:
             return await func(client, message, *args, **kwargs)
     return wrapper
+
 
 def needs_conversion(input_file: str) -> bool:
     """
@@ -928,6 +990,7 @@ def needs_conversion(input_file: str) -> bool:
         logger.error(f"Could not probe file '{input_file}'. Assuming conversion is needed as a failsafe.")
         return True
 
+
 def fix_for_instagram(input_file: str, output_file: str) -> str:
     """
     Converts a video file to an Instagram-compatible format (MP4 container, AAC audio)
@@ -958,6 +1021,7 @@ def fix_for_instagram(input_file: str, output_file: str) -> str:
         logger.error(f"ffmpeg conversion failed for {input_file}. Error: {e.stderr}")
         raise ValueError(f"Video format is incompatible and conversion failed. Error: {e.stderr}")
 
+
 def apply_watermark(file_path, user_settings):
     """Applies either a text or image watermark to an image or video."""
     watermark_settings = user_settings.get("watermark_settings", {})
@@ -972,6 +1036,7 @@ def apply_watermark(file_path, user_settings):
         return apply_image_watermark(file_path, user_settings)
     
     return file_path
+
 
 def apply_text_watermark(file_path, user_settings):
     text = user_settings.get("watermark_settings", {}).get("text", "")
@@ -1020,21 +1085,24 @@ def apply_text_watermark(file_path, user_settings):
                 font = ImageFont.load_default()
 
             draw = ImageDraw.Draw(img, 'RGBA')
-            text_width, text_height = draw.textsize(text, font)
+            text_bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
             
             position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
             
             padding = int(width * 0.02)
             x, y = 0, 0
-            if position == "top_left": x, y = padding, padding
-            elif position == "top_center": x, y = (width - text_width) / 2, padding
-            elif position == "top_right": x, y = width - text_width - padding, padding
-            elif position == "mid_left": x, y = padding, (height - text_height) / 2
-            elif position == "center": x, y = (width - text_width) / 2, (height - text_height) / 2
-            elif position == "mid_right": x, y = width - text_width - padding, (height - text_height) / 2
-            elif position == "bottom_left": x, y = padding, height - text_height - padding
-            elif position == "bottom_center": x, y = (width - text_width) / 2, height - text_height - padding
-            elif position == "bottom_right": x, y = width - text_width - padding, height - text_height - padding
+            if "left" in position: x = padding
+            if "right" in position: x = width - text_width - padding
+            if "top" in position: y = padding
+            if "bottom" in position: y = height - text_height - padding
+            if "center" in position: x = (width - text_width) / 2
+            if "mid" in position: y = (height - text_height) / 2
+            
+            # Handle true center
+            if position == "center":
+                y = (height - text_height) / 2
 
             color = tuple(int(user_settings.get("watermark_settings", {}).get("text_color", "#FFFFFF").lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
             alpha = int(255 * opacity)
@@ -1046,6 +1114,7 @@ def apply_text_watermark(file_path, user_settings):
         except Exception as e:
             logger.error(f"Error applying text watermark to image: {e}")
             return file_path
+
 
 def apply_image_watermark(file_path, user_settings):
     watermark_image_id = user_settings.get("watermark_settings", {}).get("image_id")
@@ -1059,7 +1128,10 @@ def apply_image_watermark(file_path, user_settings):
     temp_watermark_path = f"temp_watermark_{watermark_image_id}.png"
     if not os.path.exists(temp_watermark_path):
         try:
-            app.download_media(watermark_image_id, file_name=temp_watermark_path)
+            # This is a blocking call, ideally should be async if called from main thread
+            # but it's called via to_thread, so it's acceptable.
+            # A better design would be to download it once when it's set.
+            asyncio.run(app.download_media(watermark_image_id, file_name=temp_watermark_path))
         except Exception as e:
             logger.error(f"Failed to download watermark image: {e}")
             return file_path
@@ -1103,20 +1175,22 @@ def apply_image_watermark(file_path, user_settings):
             
             # Apply opacity
             alpha = watermark_image.split()[3]
-            alpha = Image.eval(alpha, lambda a: a * opacity)
+            alpha = Image.eval(alpha, lambda a: int(a * opacity))
             watermark_image.putalpha(alpha)
 
             # Determine position
-            if position == "top_left": paste_pos = (0, 0)
-            elif position == "top_center": paste_pos = (int((base_image.width - watermark_image.width) / 2), 0)
-            elif position == "top_right": paste_pos = (base_image.width - watermark_image.width, 0)
-            elif position == "mid_left": paste_pos = (0, int((base_image.height - watermark_image.height) / 2))
-            elif position == "center": paste_pos = (int((base_image.width - watermark_image.width) / 2), int((base_image.height - watermark_image.height) / 2))
-            elif position == "mid_right": paste_pos = (base_image.width - watermark_image.width, int((base_image.height - watermark_image.height) / 2))
-            elif position == "bottom_left": paste_pos = (0, base_image.height - watermark_image.height)
-            elif position == "bottom_center": paste_pos = (int((base_image.width - watermark_image.width) / 2), base_image.height - watermark_image.height)
-            elif position == "bottom_right": paste_pos = (base_image.width - watermark_image.width, base_image.height - watermark_image.height)
-            else: paste_pos = (base_image.width - watermark_image.width, base_image.height - watermark_image.height) # Default
+            if "left" in position: x = 0
+            if "right" in position: x = base_image.width - watermark_image.width
+            if "top" in position: y = 0
+            if "bottom" in position: y = base_image.height - watermark_image.height
+            if "center" in position: x = int((base_image.width - watermark_image.width) / 2)
+            if "mid" in position: y = int((base_image.height - watermark_image.height) / 2)
+            
+            # Handle true center
+            if position == "center":
+                y = int((base_image.height - watermark_image.height) / 2)
+
+            paste_pos = (x, y)
             
             base_image.paste(watermark_image, paste_pos, watermark_image)
             
@@ -1127,10 +1201,12 @@ def apply_image_watermark(file_path, user_settings):
             logger.error(f"Error applying image watermark to image: {e}")
             return file_path
 
+
 # --- File Center Management ---
 async def find_file_in_center(file_hash):
     if db is None: return None
     return await asyncio.to_thread(db.file_center.find_one, {"file_hash": file_hash})
+
 
 async def add_file_to_center(file_id, file_path, file_hash, metadata):
     if db is None: return
@@ -1144,6 +1220,7 @@ async def add_file_to_center(file_id, file_path, file_hash, metadata):
     }
     await asyncio.to_thread(db.file_center.insert_one, file_doc)
     logger.info(f"File {file_hash} added to file center.")
+
 
 # === COMMAND HANDLERS ===
 
@@ -1211,16 +1288,18 @@ async def start(_, msg):
             "✅ Ultra-fast uploading & High Quality\n"
             "✅ No file size limit & unlimited uploads\n"
             "✅ Instagram Support\n\n"
-            "👤 Contact Admin → [Admin Tom](https://t.me/CjjTom)** to get premium\n"
+            "👤 Contact Admin → [Admin Tom](https://t.me/CjjTom) to get premium\n"
             "🔐 Your data is fully encrypted\n\n"
             f"🆔 Your ID: `{user_id}`"
         )
     welcome_msg += premium_details_text
     await msg.reply(welcome_msg, reply_markup=get_main_keyboard(user_id, premium_platforms), parse_mode=enums.ParseMode.MARKDOWN)
 
+
 @app.on_message(filters.command("restart") & filters.user(ADMIN_ID))
 async def restart_cmd(_, msg):
     await restart_bot(msg)
+
 
 @app.on_message(filters.command(["instagramlogin", "iglogin"]))
 @with_user_lock
@@ -1232,6 +1311,7 @@ async def instagram_login_cmd(_, msg):
     await _save_user_state(user_id, {"action": "waiting_for_instagram_username", "platform": "instagram"})
     await msg.reply("👤 " + to_bold_sans("Please Send Your Instagram Username."))
 
+
 @app.on_message(filters.command("buypypremium"))
 @app.on_message(filters.regex("⭐ ᴩʀᴇᴍɪᴜᴍ"))
 async def show_premium_options(_, msg):
@@ -1240,9 +1320,10 @@ async def show_premium_options(_, msg):
     premium_plans_text = (
         "⭐ " + to_bold_sans("Upgrade To Premium!") + " ⭐\n\n"
         + to_bold_sans("Unlock Full Features And Upload Unlimited Content Without Restrictions.") + "\n\n"
-        "**Available Plans:**"
+        + "**Available Plans:**"
     )
     await msg.reply(premium_plans_text, reply_markup=get_premium_plan_markup(user_id), parse_mode=enums.ParseMode.MARKDOWN)
+
 
 @app.on_message(filters.command("premiumdetails"))
 async def premium_details_cmd(_, msg):
@@ -1280,6 +1361,7 @@ async def premium_details_cmd(_, msg):
 
     await msg.reply(status_text, parse_mode=enums.ParseMode.MARKDOWN)
 
+
 @app.on_message(filters.command("reset_profile"))
 @with_user_lock
 async def reset_profile_cmd(_, msg):
@@ -1291,6 +1373,7 @@ async def reset_profile_cmd(_, msg):
         ]),
         parse_mode=enums.ParseMode.MARKDOWN
     )
+
 
 @app.on_message(filters.command("broadcast") & filters.user(ADMIN_ID))
 async def broadcast_cmd(_, msg):
@@ -1325,6 +1408,7 @@ async def broadcast_cmd(_, msg):
         f"Sent: `{sent_count}`, Failed: `{failed_count}`"
     )
 
+
 @app.on_message(filters.command("skip") & filters.private)
 @with_user_lock
 async def handle_skip_command(_, msg):
@@ -1351,6 +1435,7 @@ async def handle_skip_command(_, msg):
             f"✅ " + to_bold_sans(f"Skipped Captions. Now Choose A Scheduling Option For The {media_count} Posts."),
             reply_markup=get_schedule_options_markup()
         )
+
 
 @app.on_message(filters.command("done") & filters.private)
 @with_user_lock
@@ -1388,6 +1473,7 @@ async def handle_done_command(_, msg):
             "• Or use the `/skip` command to use your default caption."
         )
 
+
 @app.on_message(filters.command("bulklimits") & filters.user(ADMIN_ID))
 async def set_bulk_limits_cmd(_, msg):
     try:
@@ -1408,6 +1494,7 @@ async def set_bulk_limits_cmd(_, msg):
         await msg.reply(f"✅ Bulk upload limits updated successfully:\n`Trial`: {trial_limit}\n`Premium`: {premium_limit}\n`Admin`: {admin_limit}")
     except (ValueError, IndexError):
         await msg.reply("❌ Invalid format. Please use `/bulklimits <trial_limit> <premium_limit> <admin_limit>`")
+
 
 @app.on_message(filters.command("bulkwindow") & filters.user(ADMIN_ID))
 async def set_bulk_window_cmd(_, msg):
@@ -1431,11 +1518,13 @@ async def set_bulk_window_cmd(_, msg):
     except Exception as e:
         await msg.reply(f"❌ An error occurred: {e}")
 
+
 # === REGEX HANDLERS ===
 
 @app.on_message(filters.regex("🔄 ʀᴇꜱᴛᴀʀᴛ ʙᴏᴛ") & filters.user(ADMIN_ID))
 async def restart_button_handler(_, msg):
     await restart_bot(msg)
+
 
 @app.on_message(filters.regex("⚙️ ꜱᴇᴛᴛɪɴɢꜱ"))
 async def settings_menu(_, msg):
@@ -1452,6 +1541,7 @@ async def settings_menu(_, msg):
         reply_markup=get_insta_settings_markup(user_settings)
     )
 
+
 @app.on_message(filters.regex("🛠 ᴀᴅᴍɪɴ ᴩᴀɴᴇʟ") & filters.user(ADMIN_ID))
 async def admin_panel_button_handler(_, msg):
     await msg.reply(
@@ -1460,6 +1550,7 @@ async def admin_panel_button_handler(_, msg):
         reply_markup=admin_markup,
         parse_mode=enums.ParseMode.MARKDOWN
     )
+
 
 @app.on_message(filters.regex("📊 ꜱᴛᴀᴛꜱ"))
 async def show_stats(_, msg):
@@ -1527,6 +1618,7 @@ async def show_stats(_, msg):
     )
     await msg.reply(stats_text, parse_mode=enums.ParseMode.MARKDOWN)
 
+
 @app.on_message(filters.regex("📦 ʙᴜʟᴋ ᴜᴩʟᴏᴀᴅ"))
 @with_user_lock
 async def initiate_bulk_upload_menu(_, msg):
@@ -1555,6 +1647,7 @@ async def initiate_bulk_upload_menu(_, msg):
         + to_bold_sans(f"Send Up To {limit} Videos For Reels Upload.") + "\n"
         + "When you are done, send the `/done` command to continue."
     )
+
 
 @app.on_message(filters.regex("📤 ɪɴꜱᴛᴀ ʀᴇᴇʟ|📸 ɪɴꜱᴛᴀ ᴩʜᴏᴛᴏ|🗂️ ɪɴꜱᴛᴀ ᴀʟʙᴜᴍ|⚡ ɪɴꜱᴛᴀ ꜱᴛᴏʀy"))
 @with_user_lock
@@ -1637,7 +1730,6 @@ async def handle_text_input(_, msg):
                 user_settings["active_ig_username"] = username
                 await save_user_settings(user_id, user_settings)
                 
-                # Corrected f-string and function call
                 await safe_edit_message(login_msg, f"✅ " + to_bold_sans(f"Instagram Login Successful For @{username}!"))
                 
                 log_text = (
@@ -1908,12 +2000,14 @@ async def confirm_reset_profile_cb(_, query):
     await query.answer("✅ Your profile has been reset. Please use /start to begin again.", show_alert=True)
     await safe_edit_message(query.message, "✅ " + to_bold_sans("Your Profile Has Been Reset. Please Use /start To Begin Again."))
 
+
 @app.on_callback_query(filters.regex("^hub_settings_instagram$"))
 async def hub_settings_instagram_cb(_, query):
     user_settings = await get_user_settings(query.from_user.id)
     await safe_edit_message(
         query.message, "⚙️ " + to_bold_sans("Configure Your Instagram Settings:"), reply_markup=get_insta_settings_markup(user_settings)
     )
+
 
 # --- Account Management Callbacks ---
 @app.on_callback_query(filters.regex("^manage_ig_accounts$"))
@@ -1935,6 +2029,7 @@ async def manage_ig_accounts_cb(_, query):
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
+
 @app.on_callback_query(filters.regex("^select_ig_account_"))
 async def select_ig_account_cb(_, query):
     user_id = query.from_user.id
@@ -1947,6 +2042,7 @@ async def select_ig_account_cb(_, query):
     await query.answer(f"✅ @{username} is now your active Instagram account.", show_alert=True)
     await manage_ig_accounts_cb(app, query) # Refresh the panel
 
+
 @app.on_callback_query(filters.regex("^confirm_logout_ig_"))
 async def confirm_logout_ig_cb(_, query):
     username = query.data.split("confirm_logout_ig_")[-1]
@@ -1955,6 +2051,7 @@ async def confirm_logout_ig_cb(_, query):
         to_bold_sans(f"Logout {username}? You Can Re-login Later."),
         reply_markup=get_insta_logout_confirm_markup(username)
     )
+
 
 @app.on_callback_query(filters.regex("^logout_ig_account_"))
 async def logout_ig_account_cb(_, query):
@@ -1972,6 +2069,7 @@ async def logout_ig_account_cb(_, query):
     await query.answer(f"✅ Logged out from @{username_to_logout}.", show_alert=True)
     await manage_ig_accounts_cb(app, query) # Refresh the panel
 
+
 @app.on_callback_query(filters.regex("^add_account_"))
 async def add_account_cb(_, query):
     user_id = query.from_user.id
@@ -1982,6 +2080,7 @@ async def add_account_cb(_, query):
     
     await _save_user_state(user_id, {"action": f"waiting_for_{platform}_username"})
     await safe_edit_message(query.message, f"👤 " + to_bold_sans(f"Please Send Your {platform.capitalize()} Username."))
+
 
 # --- General Callbacks ---
 @app.on_callback_query(filters.regex("^cancel_upload$"))
@@ -2003,6 +2102,7 @@ async def cancel_upload_cb(_, query):
     await task_tracker.cancel_all_user_tasks(user_id)
     logger.info(f"User {user_id} cancelled their upload.")
 
+
 @app.on_callback_query(filters.regex("^upload_now$"))
 async def upload_now_cb(_, query):
     user_id = query.from_user.id
@@ -2015,6 +2115,7 @@ async def upload_now_cb(_, query):
     await _clear_user_state(user_id)
     await start_upload_task(query.message, file_info, user_id=query.from_user.id)
     
+
 @app.on_callback_query(filters.regex("^bulk_schedule_posts$"))
 async def bulk_schedule_posts_cb(_, query):
     user_id = query.from_user.id
@@ -2024,6 +2125,7 @@ async def bulk_schedule_posts_cb(_, query):
     
     await safe_edit_message(query.message, to_bold_sans("How would you like to schedule your posts?"), reply_markup=get_schedule_presets_markup())
     await _save_user_state(user_id, {**state_data, 'action': 'waiting_for_schedule_preset'})
+
 
 @app.on_callback_query(filters.regex("^schedule_preset_"))
 async def schedule_preset_cb(_, query):
@@ -2107,9 +2209,10 @@ async def schedule_preset_cb(_, query):
     await save_bulk_schedules(user_id, state_data, scheduled_posts)
     
     await safe_edit_message(query.message, "✅ " + to_bold_sans(f"Scheduled {media_count} Posts! They Will Be Uploaded At The Set Times."),
-                             reply_markup=get_bulk_schedule_markup())
+                                      reply_markup=get_bulk_schedule_markup())
     
     await _clear_user_state(user_id)
+
 
 @app.on_callback_query(filters.regex("^view_pending_schedules$"))
 async def view_pending_schedules_cb(_, query):
@@ -2123,12 +2226,13 @@ async def view_pending_schedules_cb(_, query):
         
     schedule_text = "⏳ **" + to_bold_sans("Your Pending Schedules:") + "**\n\n"
     for i, schedule in enumerate(schedules):
-        run_at_local = schedule['run_at'].astimezone(pytz.timezone('Asia/Kolkata'))
+        run_at_local = pytz.utc.localize(schedule['run_at']).astimezone(pytz.timezone('Asia/Kolkata'))
         
         schedule_text += f"{i+1}. **Type**: {schedule['upload_type'].capitalize()}\n"
-        schedule_text += f"      **Run At**: `{run_at_local.strftime('%Y-%m-%d %I:%M %p %Z')}`\n"
+        schedule_text += f"       **Run At**: `{run_at_local.strftime('%Y-%m-%d %I:%M %p %Z')}`\n"
         
     await safe_edit_message(query.message, schedule_text, reply_markup=get_user_schedule_management_markup(), parse_mode=enums.ParseMode.MARKDOWN)
+
 
 @app.on_callback_query(filters.regex("^delete_all_schedules$"))
 async def delete_all_schedules_cb(_, query):
@@ -2142,6 +2246,7 @@ async def delete_all_schedules_cb(_, query):
         ]),
         parse_mode=enums.ParseMode.MARKDOWN)
 
+
 @app.on_callback_query(filters.regex("^confirm_delete_all_schedules$"))
 async def confirm_delete_all_schedules_cb(_, query):
     user_id = query.from_user.id
@@ -2150,6 +2255,7 @@ async def confirm_delete_all_schedules_cb(_, query):
     result = await asyncio.to_thread(db.schedules.delete_many, {"user_id": user_id})
     await query.answer(f"✅ Deleted {result.deleted_count} schedules.", show_alert=True)
     await safe_edit_message(query.message, "✅ " + to_bold_sans("All Your Schedules Have Been Deleted."), reply_markup=get_bulk_schedule_markup())
+
 
 
 @app.on_callback_query(filters.regex("^tag_users_insta$"))
@@ -2169,6 +2275,7 @@ async def tag_users_cb(_, query):
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
+
 @app.on_callback_query(filters.regex("^add_location_insta$"))
 async def add_location_cb(_, query):
     user_id = query.from_user.id
@@ -2185,6 +2292,7 @@ async def add_location_cb(_, query):
         "📍 " + to_bold_sans("Please Send The Name Of The Location You Want To Tag (e.g., `New York`).")
     )
 
+
 @app.on_callback_query(filters.regex("^select_location_"))
 async def select_location_cb(_, query):
     user_id = query.from_user.id
@@ -2193,9 +2301,16 @@ async def select_location_cb(_, query):
         return await query.answer("❌ Error: State lost. Please try adding a location again.", show_alert=True)
 
     location_pk = int(query.data.split("select_location_")[1])
-    location_obj = state_data['location_choices'].get(location_pk)
-    if not location_obj:
+    # The location object itself needs to be serializable to be stored in state
+    # This might fail if it's a complex object. Assuming it can be serialized for now.
+    location_choices_raw = state_data.get('location_choices', {})
+    location_obj_dict = location_choices_raw.get(str(location_pk))
+
+    if not location_obj_dict:
         return await query.answer("❌ Invalid location selected.", show_alert=True)
+    
+    # Re-create the Location object from the dictionary
+    location_obj = Location(**location_obj_dict)
 
     file_info = state_data.get("file_info", {})
     file_info["location"] = location_obj
@@ -2205,6 +2320,7 @@ async def select_location_cb(_, query):
         parse_mode=enums.ParseMode.MARKDOWN
     )
     await _save_user_state(user_id, {**state_data, 'action': 'waiting_for_upload_options', 'file_info': file_info})
+
 
 @app.on_callback_query(filters.regex("^cancel_location_insta$"))
 async def cancel_location_cb(_, query):
@@ -2224,6 +2340,7 @@ async def cancel_location_cb(_, query):
     )
     await _save_user_state(user_id, {**state_data, 'action': 'waiting_for_upload_options', 'file_info': file_info})
 
+
 # --- Premium & Payment Callbacks ---
 @app.on_callback_query(filters.regex("^buypypremium$"))
 async def buypypremium_cb(_, query):
@@ -2233,9 +2350,10 @@ async def buypypremium_cb(_, query):
     premium_plans_text = (
         "⭐ " + to_bold_sans("Upgrade To Premium!") + " ⭐\n\n"
         + to_bold_sans("Unlock Full Features And Upload Unlimited Content Without Restrictions.") + "\n\n"
-        "**Available Plans:**"
+        + "**Available Plans:**"
     )
     await safe_edit_message(query.message, premium_plans_text, reply_markup=get_premium_plan_markup(user_id), parse_mode=enums.ParseMode.MARKDOWN)
+
 
 @app.on_callback_query(filters.regex("^show_plan_details_"))
 async def show_plan_details_cb(_, query):
@@ -2262,11 +2380,13 @@ async def show_plan_details_cb(_, query):
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
+
 @app.on_callback_query(filters.regex("^show_payment_methods$"))
 async def show_payment_methods_cb(_, query):
     payment_methods_text = "**" + to_bold_sans("Available Payment Methods") + "**\n\n"
     payment_methods_text += to_bold_sans("Choose Your Preferred Method To Proceed With Payment.")
     await safe_edit_message(query.message, payment_methods_text, reply_markup=get_payment_methods_markup(), parse_mode=enums.ParseMode.MARKDOWN)
+
 
 @app.on_callback_query(filters.regex("^show_payment_qr_google_play$"))
 async def show_payment_qr_google_play_cb(_, query):
@@ -2276,7 +2396,7 @@ async def show_payment_qr_google_play_cb(_, query):
         return
     
     caption_text = "**" + to_bold_sans("Scan & Pay Using Google Pay") + "**\n\n" + \
-                     "Please send a screenshot of the payment to **[Admin Tom](https://t.me/CjjTom)** for activation."
+                   "Please send a screenshot of the payment to **[Admin Tom](https://t.me/CjjTom)** for activation."
     
     await query.message.reply_photo(
         photo=qr_file_id,
@@ -2284,6 +2404,7 @@ async def show_payment_qr_google_play_cb(_, query):
         parse_mode=enums.ParseMode.MARKDOWN
     )
     await query.answer()
+
 
 @app.on_callback_query(filters.regex("^show_payment_details_"))
 async def show_payment_details_cb(_, query):
@@ -2295,6 +2416,7 @@ async def show_payment_details_cb(_, query):
         f"Please pay the required amount and contact **[Admin Tom](https://t.me/CjjTom)** with a screenshot of the payment for premium activation."
     )
     await safe_edit_message(query.message, text, reply_markup=get_payment_methods_markup(), parse_mode=enums.ParseMode.MARKDOWN)
+
 
 @app.on_callback_query(filters.regex("^show_custom_payment_"))
 async def show_custom_payment_cb(_, query):
@@ -2308,6 +2430,7 @@ async def show_custom_payment_cb(_, query):
     await safe_edit_message(query.message, text, reply_markup=get_payment_methods_markup(), parse_mode=enums.ParseMode.MARKDOWN)
 
 
+
 @app.on_callback_query(filters.regex("^buy_now$"))
 async def buy_now_cb(_, query):
     text = (
@@ -2315,6 +2438,7 @@ async def buy_now_cb(_, query):
         f"Please contact **[Admin Tom](https://t.me/CjjTom)** to complete the payment process."
     )
     await safe_edit_message(query.message, text, parse_mode=enums.ParseMode.MARKDOWN)
+
 
 # --- Admin Panel Callbacks ---
 @app.on_callback_query(filters.regex("^admin_panel$"))
@@ -2328,6 +2452,7 @@ async def admin_panel_cb(_, query):
         reply_markup=admin_markup,
         parse_mode=enums.ParseMode.MARKDOWN
     )
+
 
 @app.on_callback_query(filters.regex("^global_settings_panel$"))
 async def global_settings_panel_cb(_, query):
@@ -2346,6 +2471,7 @@ async def global_settings_panel_cb(_, query):
     )
     await safe_edit_message(query.message, settings_text, reply_markup=get_admin_global_settings_markup(), parse_mode=enums.ParseMode.MARKDOWN)
 
+
 @app.on_callback_query(filters.regex("^toggle_force_disable_watermark$"))
 async def toggle_force_disable_watermark_cb(_, query):
     if not is_admin(query.from_user.id): return await query.answer("❌ Admin access required", show_alert=True)
@@ -2353,6 +2479,7 @@ async def toggle_force_disable_watermark_cb(_, query):
     await _update_global_setting("force_disable_watermark", new_status)
     await query.answer(f"Force disable watermark toggled {'ON' if new_status else 'OFF'}.", show_alert=True)
     await global_settings_panel_cb(app, query)
+
 
 @app.on_callback_query(filters.regex("^toggle_bulk_uploads$"))
 async def toggle_bulk_uploads_cb(_, query):
@@ -2362,6 +2489,7 @@ async def toggle_bulk_uploads_cb(_, query):
     await query.answer(f"Bulk uploads toggled {'ON' if new_status else 'OFF'}.", show_alert=True)
     await global_settings_panel_cb(app, query)
 
+
 @app.on_callback_query(filters.regex("^toggle_schedules_paused$"))
 async def toggle_schedules_paused_cb(_, query):
     if not is_admin(query.from_user.id): return await query.answer("❌ Admin access required", show_alert=True)
@@ -2370,6 +2498,7 @@ async def toggle_schedules_paused_cb(_, query):
     await _update_global_setting("schedules_paused", new_status)
     await query.answer(f"Scheduling has been {'PAUSED' if new_status else 'RESUMED'}.", show_alert=True)
     await global_settings_panel_cb(app, query)
+
 
 @app.on_callback_query(filters.regex("^payment_settings_panel$"))
 async def payment_settings_panel_cb(_, query):
@@ -2382,6 +2511,7 @@ async def payment_settings_panel_cb(_, query):
         reply_markup=payment_settings_markup,
         parse_mode=enums.ParseMode.MARKDOWN
     )
+
 
 @app.on_callback_query(filters.regex("^back_to_"))
 async def back_to_cb(_, query):
@@ -2417,6 +2547,7 @@ async def back_to_cb(_, query):
     else:
         await query.answer("❌ Unknown back action", show_alert=True)
 
+
 @app.on_callback_query(filters.regex("^activate_trial_instagram$"))
 async def activate_trial_instagram_cb(_, query):
     user_id = query.from_user.id
@@ -2433,7 +2564,7 @@ async def activate_trial_instagram_cb(_, query):
         "added_at": datetime.utcnow(), "until": premium_until,
         "status": "active" # Set status on grant
     }
-    await _save_user_data(user_id, {"premium": user_premium_data})
+   await _save_user_data(user_id, {"premium": user_premium_data})
 
     logger.info(f"User {user_id} activated a 6-hour Instagram trial.")
     await send_log_to_channel(app, LOG_CHANNEL, f"✨ User `{user_id}` activated a 6-hour Instagram trial.")
@@ -2485,7 +2616,7 @@ async def set_max_uploads_cb(_, query):
     current_limit = global_settings.get("max_concurrent_uploads")
     await safe_edit_message(
         query.message,
-        to_bold_sans(f"Please Send The New Max Number Of Concurrent Uploads.\ncurrent Limit: `{current_limit}`"),
+        to_bold_sans(f"Please Send The New Max Number Of Concurrent Uploads.\nCurrent Limit: `{current_limit}`"),
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
@@ -2498,7 +2629,7 @@ async def set_proxy_url_cb(_, query):
     await safe_edit_message(
         query.message,
         "🌐 " + to_bold_sans("Please Send The New Proxy Url (e.g., `http://user:pass@ip:port`).") + "\n"
-        + to_bold_sans(f"Type 'none' Or 'remove' To Disable.\ncurrent Proxy: `{current_proxy}`"),
+        + to_bold_sans(f"Type 'none' Or 'remove' To Disable.\nCurrent Proxy: `{current_proxy}`"),
         parse_mode=enums.ParseMode.MARKDOWN
     )
 
@@ -2650,7 +2781,7 @@ async def show_user_details(message, target_user_id):
     
     details_text = f"👤 **{to_bold_sans('User Details')}**\n\n"
     details_text += f"**TG ID**: `{target_user_id}`\n"
-    details_text += f"**TG Username**: ||`@{tg_username}`||\n"
+    details_text += f"**TG Username**: `@{tg_username}`\n"
     details_text += f"**Last Active**: `{last_active}`\n"
     details_text += f"**Total Uploads**: `{total_uploads}`\n"
     details_text += f"**Last Upload**: `{last_upload_time}`\n\n"
@@ -2676,7 +2807,6 @@ async def show_user_details(message, target_user_id):
     buttons.append([InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_panel")])
     reply_markup = InlineKeyboardMarkup(buttons)
 
-    # Use the original message context if it's a callback query
     if hasattr(message, 'message') and message.message:
         await safe_edit_message(message.message, details_text, reply_markup, parse_mode=enums.ParseMode.MARKDOWN)
     else:
@@ -2716,7 +2846,7 @@ async def admin_logout_cb(_, query):
 async def reset_user_settings_cb(_, query):
     user_id = query.from_user.id
     
-    await safe_edit_message(query.message, "⚠️ **Warning!** " + to_bold_sans("This Will Reset All Your Bot-specific Settings To Default (e.g., caption, hashtags, watermark). Are You Sure?"),
+    await safe_edit_message(query.message, "⚠️ **WARNING!** " + to_bold_sans("This Will Reset All Your Bot-specific Settings To Default (e.g., caption, hashtags, watermark). Are You Sure?"),
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Yes, Reset Settings", callback_data="confirm_reset_user_settings")],
             [InlineKeyboardButton("❌ No, Cancel", callback_data="hub_settings_instagram")]
@@ -2790,7 +2920,7 @@ async def confirm_platform_selection_cb(_, query):
     
     await safe_edit_message(
         query.message,
-        f"✅ " + to_bold_sans(f"Platforms Selected: `{', '.join(p.capitalize() for p in selected_platforms)}`.\nnow, Select A Premium Plan For User `{state_data['target_user_id']}`:"),
+        f"✅ " + to_bold_sans(f"Platforms Selected: `{', '.join(p.capitalize() for p in selected_platforms)}`.\nNow, Select A Premium Plan For User `{state_data['target_user_id']}`:"),
         reply_markup=get_premium_plan_markup(user_id),
         parse_mode=enums.ParseMode.MARKDOWN
     )
@@ -3123,7 +3253,7 @@ async def handle_media_upload(_, msg):
             return await msg.reply("❌ " + to_bold_sans("Bulk Reels Upload Only Accepts Videos. Please Send A Video File."))
         
         state_data["media_file_ids"].append(media.file_id)
-        state_data["media_msgs"].append(msg)
+        state_data["media_msgs"].append({"chat_id": msg.chat.id, "message_id": msg.id}) # Storing IDs now
         state_data["media_count"] += 1
         await _save_user_state(user_id, state_data)
         return await msg.reply(f"✅ " + to_bold_sans(f"Received Video {state_data['media_count']}. Send More Or Use `/done`."))
@@ -3133,7 +3263,7 @@ async def handle_media_upload(_, msg):
             return await msg.reply("⚠️ " + to_bold_sans("Max 10 Items In An Album. Send `/done` To Finish."))
         
         state_data['media_file_ids'].append(media.file_id)
-        state_data['media_msgs'].append(msg)
+        state_data['media_msgs'].append({"chat_id": msg.chat.id, "message_id": msg.id}) # Storing IDs now
         
         num_files = len(state_data['media_file_ids'])
         await _save_user_state(user_id, state_data)
@@ -3160,10 +3290,11 @@ async def _deferred_download_and_show_options(msg, file_info):
     
     processing_msg = await msg.reply("⏳ " + to_bold_sans("Starting Download..."))
     
+    monitor_task = None
     try:
         start_time = time.time()
         last_update_time = [0]
-        # Monitor progress in a separate thread
+        # Monitor progress in a separate task
         monitor_task = asyncio.create_task(monitor_progress_task(msg.chat.id, processing_msg.id, processing_msg))
         
         file_info["downloaded_path"] = await app.download_media(
@@ -3171,9 +3302,6 @@ async def _deferred_download_and_show_options(msg, file_info):
             progress=progress_callback_threaded,
             progress_args=("Download", processing_msg.id, msg.chat.id, start_time, last_update_time)
         )
-        
-        # Ensure monitor task is cancelled once download is complete
-        monitor_task.cancel()
         
         caption_preview = file_info.get('custom_caption') or '*(Using Default Caption)*'
         if len(caption_preview) > 100:
@@ -3196,60 +3324,63 @@ async def _deferred_download_and_show_options(msg, file_info):
         await safe_edit_message(processing_msg, f"❌ " + to_bold_sans(f"Download Failed: {e}"))
         cleanup_temp_files([file_info.get("downloaded_path")])
         await _clear_user_state(user_id)
+    finally:
+        if monitor_task and not monitor_task.done():
+            monitor_task.cancel()
 
 # === UPLOAD PROCESSING ===
 
 async def schedule_bulk_upload_task():
-    while True:
-        await asyncio.sleep(60) # Check every minute
-        if global_settings.get("schedules_paused"):
-            logger.info("Scheduling is paused by admin. Skipping check.")
-            continue
-            
-        now_utc = datetime.utcnow()
-        try:
-            schedules_to_run = await asyncio.to_thread(
-                db.schedules.find,
-                {"run_at": {"$lte": now_utc}, "status": "pending"}
-            )
-            
-            schedules_list = await asyncio.to_thread(list, schedules_to_run)
-        except Exception as e:
-            logger.error(f"Error fetching schedules from DB: {e}")
-            continue
+    while not shutdown_event.is_set():
+        if not global_settings.get("schedules_paused"):
+            now_utc = datetime.utcnow()
+            try:
+                schedules_to_run = await asyncio.to_thread(
+                    db.schedules.find,
+                    {"run_at": {"$lte": now_utc}, "status": "pending"}
+                )
+                
+                schedules_list = await asyncio.to_thread(list, schedules_to_run)
 
-        for schedule in schedules_list:
-            user_id = schedule['user_id']
-            
-            file_info = {
-                "platform": schedule['platform'],
-                "upload_type": schedule['upload_type'],
-                "custom_caption": schedule.get('caption'),
-                "file_id": schedule.get("file_id"),
-                "original_media_msg_id": schedule.get("media_msg_id"),
-                "usertags": [], # Scheduled uploads don't have this data
-                "location": None
-            }
-            
-            # Update status to processing to avoid double-scheduling
-            await asyncio.to_thread(db.schedules.update_one, {"_id": schedule['_id']}, {"$set": {"status": "processing"}})
-            
-            task_tracker.create_task(
-                safe_task_wrapper(process_and_upload(None, file_info, user_id, is_scheduled=True, schedule_id=schedule['_id'])),
-                user_id=user_id,
-                task_name=f"scheduled_upload_{schedule['_id']}"
-            )
+                for schedule in schedules_list:
+                    user_id = schedule['user_id']
+                    
+                    file_info = {
+                        "platform": schedule['platform'],
+                        "upload_type": schedule['upload_type'],
+                        "custom_caption": schedule.get('caption'),
+                        "file_id": schedule.get("file_id"),
+                        "original_media_msg_id": schedule.get("media_msg_id"),
+                        "usertags": [],
+                        "location": None
+                    }
+                    
+                    await asyncio.to_thread(db.schedules.update_one, {"_id": schedule['_id']}, {"$set": {"status": "processing"}})
+                    
+                    task_tracker.create_task(
+                        safe_task_wrapper(process_and_upload(None, file_info, user_id, is_scheduled=True, schedule_id=schedule['_id'])),
+                        user_id=user_id,
+                        task_name=f"scheduled_upload_{schedule['_id']}"
+                    )
+            except Exception as e:
+                logger.error(f"Error fetching schedules from DB: {e}")
+        
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=60)
+        except asyncio.TimeoutError:
+            pass
 
 async def save_bulk_schedules(user_id, state_data, scheduled_posts):
     if db is None: return
     
     for i, post in enumerate(scheduled_posts):
+        media_msg_info = state_data['media_msgs'][i]
         await asyncio.to_thread(db.schedules.insert_one, {
             "user_id": user_id,
             "platform": state_data['platform'],
             "upload_type": state_data['upload_type'],
             "file_id": state_data['media_file_ids'][i],
-            "media_msg_id": state_data['media_msgs'][i]['id'],
+            "media_msg_id": media_msg_info['message_id'],
             "caption": post.get('caption', ""),
             "run_at": post['run_at'],
             "status": "pending",
@@ -3278,7 +3409,7 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False, schedu
         except Exception as e:
             logger.error(f"Failed to send processing message for scheduled upload to user {user_id}: {e}")
             if is_scheduled and schedule_id:
-                 await asyncio.to_thread(db.schedules.update_one, {"_id": schedule_id}, {"$set": {"status": "failed", "completed_at": datetime.utcnow(), "error": str(e)}})
+                   await asyncio.to_thread(db.schedules.update_one, {"_id": schedule_id}, {"$set": {"status": "failed", "completed_at": datetime.utcnow(), "error": str(e)}})
             return
 
     task_tracker.cancel_user_task(user_id, "timeout")
@@ -3332,44 +3463,32 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False, schedu
                             usertags_to_add.append(Usertag(user=user_info, x=0.5, y=0.5))
                         except Exception as e:
                             logger.warning(f"Could not find user to tag: {u_name}, Error: {e}")
-
-                location_to_add = file_info.get("location") if is_premium else None
                 
-                # Download media for processing
+                location_to_add = None
+                if is_premium and file_info.get("location"):
+                    # Re-create location object from stored dict
+                    location_dict = file_info["location"]
+                    location_to_add = Location(**location_dict)
+
                 paths_to_upload = []
                 media_file_ids = file_info.get('media_file_ids') or [file_info.get('file_id')]
                 
                 for file_id in media_file_ids:
                     if not file_id: continue
-                    try:
-                        file_hash = hashlib.sha256(file_id.encode()).hexdigest()
-                        file_in_center = await find_file_in_center(file_hash)
-                        
-                        path = None
-                        if file_in_center:
-                            logger.info(f"Found file {file_id} in file center. Reusing.")
-                            path = file_in_center['metadata']['path']
-                            if not os.path.exists(path):
-                                # File reference is broken, re-download
-                                path = await app.download_media(file_id)
-                                await add_file_to_center(file_id, path, file_hash, {"path": path}) # Update path
-                        else:
-                            path = await app.download_media(file_id)
-                            await add_file_to_center(file_id, path, file_hash, {"path": path})
-                        paths_to_upload.append(path)
-                    except Exception as e:
-                        raise ValueError(f"Failed to download media for processing: {e}")
+                    path = await app.download_media(file_id)
+                    files_to_clean.append(path) # Always clean up downloaded files
+                    paths_to_upload.append(path)
 
-                # Process files before upload
                 final_paths = []
                 for path in paths_to_upload:
                     upload_path = path
                     
-                    if (upload_type == "reel" or upload_type == "story") and await asyncio.to_thread(needs_conversion, path):
-                        await safe_edit_message(processing_msg, "⚙️ " + to_bold_sans("Processing Video... This May Take A Moment."))
-                        fixed_path = path.rsplit(".", 1)[0] + "_fixed.mp4"
-                        upload_path = await asyncio.to_thread(fix_for_instagram, path, fixed_path)
-                        files_to_clean.append(upload_path)
+                    if (upload_type in ["reel", "story", "album"]) and any(path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.mkv', '.webm']):
+                        if await asyncio.to_thread(needs_conversion, path):
+                            await safe_edit_message(processing_msg, "⚙️ " + to_bold_sans("Processing Video... This May Take A Moment."))
+                            fixed_path = path.rsplit(".", 1)[0] + "_fixed.mp4"
+                            upload_path = await asyncio.to_thread(fix_for_instagram, path, fixed_path)
+                            files_to_clean.append(upload_path)
                     
                     if user_settings.get("watermark_settings", {}).get("enabled") and not global_settings.get("force_disable_watermark"):
                         await safe_edit_message(processing_msg, "🖼️ " + to_bold_sans("Adding Watermark..."))
@@ -3393,7 +3512,12 @@ async def process_and_upload(msg, file_info, user_id, is_scheduled=False, schedu
                     result = await asyncio.to_thread(user_upload_client.album_upload, final_paths, final_caption, usertags=usertags_to_add, location=location_to_add)
                     url = f"https://instagram.com/p/{result.code}"
                 elif upload_type == "story":
-                    result = await asyncio.to_thread(user_upload_client.photo_upload_to_story if msg.photo else user_upload_client.video_upload_to_story, final_paths[0])
+                    media_obj = await app.get_messages(user_id, file_info['original_media_msg_id'])
+                    is_photo_story = bool(media_obj.photo)
+                    if is_photo_story:
+                         result = await asyncio.to_thread(user_upload_client.photo_upload_to_story, final_paths[0])
+                    else:
+                         result = await asyncio.to_thread(user_upload_client.video_upload_to_story, final_paths[0])
                     url = f"https://instagram.com/stories/{active_username}/{result.pk}"
                 
                 if result:
@@ -3444,6 +3568,12 @@ async def timeout_task(user_id, message_id):
     await asyncio.sleep(600)
     state_data = await _get_user_state(user_id)
     if state_data:
+        file_info = state_data.get("file_info", {})
+        downloaded_path = file_info.get("downloaded_path")
+        if downloaded_path:
+            cleanup_temp_files([downloaded_path])
+            logger.info(f"Cleaned up timed-out file {downloaded_path} for user {user_id}.")
+
         await _clear_user_state(user_id)
         logger.info(f"Task for user {user_id} timed out and was canceled.")
         try:
@@ -3566,10 +3696,11 @@ async def start_bot():
             valid_log_channel = False
 
     task_tracker.create_task(schedule_bulk_upload_task(), task_name="bulk_scheduler")
-
+    
     logger.info("Step 5: Bot is now online and idle. Waiting for tasks...")
-    await idle()
-
+    
+    await shutdown_event.wait()
+    
     logger.info("Shutting down...")
     await task_tracker.cancel_and_wait_all()
     await app.stop()
@@ -3579,9 +3710,11 @@ async def start_bot():
 
 # === MAIN ENTRYPOINT ===
 if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, shutdown_event.set)
+        
     try:
-        app.run(start_bot())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutdown signal received.")
+        loop.run_until_complete(start_bot())
     except Exception as e:
-        logger.critical(f"Bot crashed during startup: {e}", exc_info=True)
+        logger.critical(f"Bot crashed during runtime: {e}", exc_info=True)
