@@ -60,7 +60,8 @@ from pyrogram.types import (
     KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    ReplyKeyboardRemove
+    ReplyKeyboardRemove,
+    Message
 )
 
 # Instagram Client
@@ -652,28 +653,37 @@ async def _get_user_state(user_id):
 
 _visited = set()
 def clean_object(obj):
+    # This function is now safer and more specific.
+    if isinstance(obj, str) or isinstance(obj, int) or isinstance(obj, bool) or obj is None:
+        return obj
+
     if id(obj) in _visited:
         return "<...circular_reference...>"
     _visited.add(id(obj))
-    
-    if isinstance(obj, dict):
-        result = {k: clean_object(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        result = [clean_object(item) for item in obj]
-    elif hasattr(obj, '__dict__'):
-        # This is a simplified approach; might need refinement for complex objects
-        # For Pyrogram Message objects, it's better to cherry-pick attributes
-        if 'pyrogram.types' in str(type(obj)):
-             result = {
+
+    result = None
+    try:
+        if isinstance(obj, dict):
+            result = {k: clean_object(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            result = [clean_object(item) for item in obj]
+        # It now specifically checks if the object is a Message
+        elif isinstance(obj, Message):
+            result = {
                 'id': getattr(obj, 'id', None),
-                'chat_id': getattr(obj.chat, 'id', None)
+                'chat_id': getattr(obj.chat, 'id', None) if hasattr(obj, 'chat') else None
             }
+        elif hasattr(obj, '__dict__'):
+            # Fallback for other complex objects, avoiding Pyrogram types we don't want
+            if 'pyrogram.types' not in str(type(obj)):
+                 result = {k: clean_object(v) for k, v in obj.__dict__.items()}
+            else:
+                 result = f"<...unhandled_pyrogram_type:{type(obj).__name__}...>"
         else:
-            result = {k: clean_object(v) for k, v in obj.__dict__.items()}
-    else:
-        result = obj
-    
-    _visited.discard(id(obj))
+            result = obj
+    finally:
+        _visited.discard(id(obj))
+        
     return result
 
 
