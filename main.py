@@ -1156,14 +1156,13 @@ def apply_image_watermark(file_path, user_settings):
     temp_watermark_path = f"temp_watermark_{watermark_image_id}.png"
     if not os.path.exists(temp_watermark_path):
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.run_coroutine_threadsafe(
-                    app.download_media(watermark_image_id, file_name=temp_watermark_path), 
-                    loop
-                ).result()
-            else:
-                 loop.run_until_complete(app.download_media(watermark_image_id, file_name=temp_watermark_path))
+            # Safely run async download from a sync function
+            loop = asyncio.get_running_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                app.download_media(watermark_image_id, file_name=temp_watermark_path),
+                loop
+            )
+            future.result() # Wait for the download to complete
         except Exception as e:
             logger.error(f"Failed to download watermark image: {e}")
             return file_path
@@ -1174,25 +1173,59 @@ def apply_image_watermark(file_path, user_settings):
         temp_path = f"watermarked_video_{os.path.basename(file_path)}"
         try:
             clip = VideoFileClip(file_path)
-            watermark_clip = ImageClip(temp_watermark_path)
+            watermark_clip = ImageClip(temp_watermark_path).set_duration(clip.duration)
             
             watermark_w = int(clip.w * size)
             watermark_clip = watermark_clip.resize(width=watermark_w)
             
             positions = {
-                "top_left": (20, 20), "top_center": ('center', 20), "top_right": ('right', 20),
-                "mid_left": (20, 'center'), "center": ('center', 'center'), "mid_right": ('right', 'center'),
-                "bottom_left": (20, 'bottom'), "bottom_center": ('center', 'bottom'), "bottom_right": ('right', 'bottom')
+                "top_left": ("left", "top"), "top_center": ("center", "top"), "top_right": ("right", "top"),
+                "mid_left": ("left", "center"), "center": ("center", "center"), "mid_right": ("right", "center"),
+                "bottom_left": ("left", "bottom"), "bottom_center": ("center", "bottom"), "bottom_right": ("right", "bottom")
             }
-            final_position = positions.get(position, ('right', 'bottom'))
+            final_position = positions.get(position, ("right", "bottom"))
             
-            watermark_clip = watermark_clip.set_duration(clip.duration).set_opacity(opacity).set_position(final_position)
+            watermark_clip = watermark_clip.set_opacity(opacity).set_position(final_position)
             final_video = CompositeVideoClip([clip, watermark_clip])
 
-            final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True)
+            final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac")
             return temp_path
         except Exception as e:
             logger.error(f"Error applying image watermark to video: {e}")
+            return file_path
+    else:
+        try:
+            base_image = Image.open(file_path).convert("RGBA")
+            watermark_image = Image.open(temp_watermark_path).convert("RGBA")
+            
+            watermark_w = int(base_image.width * size)
+            watermark_h = int(watermark_w * (watermark_image.height / watermark_image.width))
+            watermark_image = watermark_image.resize((watermark_w, watermark_h))
+            
+            alpha = watermark_image.split()[3]
+            alpha = Image.eval(alpha, lambda a: int(a * opacity))
+            watermark_image.putalpha(alpha)
+
+            positions = {
+                "top_left": (0, 0),
+                "top_center": (int((base_image.width - watermark_image.width) / 2), 0),
+                "top_right": (base_image.width - watermark_image.width, 0),
+                "mid_left": (0, int((base_image.height - watermark_image.height) / 2)),
+                "center": (int((base_image.width - watermark_image.width) / 2), int((base_image.height - watermark_image.height) / 2)),
+                "mid_right": (base_image.width - watermark_image.width, int((base_image.height - watermark_image.height) / 2)),
+                "bottom_left": (0, base_image.height - watermark_image.height),
+                "bottom_center": (int((base_image.width - watermark_image.width) / 2), base_image.height - watermark_image.height),
+                "bottom_right": (base_image.width - watermark_image.width, base_image.height - watermark_image.height)
+            }
+            paste_pos = positions.get(position, positions["bottom_right"])
+            
+            base_image.paste(watermark_image, paste_pos, watermark_image)
+            
+            temp_path = f"watermarked_{os.path.basename(file_path)}"
+            base_image.save(temp_path, 'PNG')
+            return temp_path
+        except Exception as e:
+            logger.error(f"Error applying image watermark to image: {e}")
             return file_path
     else:
         try:
