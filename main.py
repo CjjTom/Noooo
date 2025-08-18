@@ -217,7 +217,8 @@ class TaskTracker:
                     logger.info(f"Cancelled task '{task_name}' for user {user_id} during cleanup.")
             await asyncio.gather(*[t for t in user_tasks.values() if not t.done()], return_exceptions=True)
 
-      def cancel_and_wait_all(self):
+    # This function is now correctly indented
+    async def cancel_and_wait_all(self):
         tasks_to_cancel = [t for t in self._tasks if not t.done()]
         if not tasks_to_cancel:
             return
