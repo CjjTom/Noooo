@@ -21,9 +21,23 @@ from instagrapi.exceptions import (
     ChallengeRequired,
     BadPassword,
     PleaseWaitFewMinutes,
-    ClientError,
-    MediaUploadError
+    ClientError
 )
+
+# --- Upload error compatibility shim for instagrapi changes ---
+try:
+    from instagrapi.exceptions import (
+        PhotoNotUpload,
+        VideoNotUpload,
+        StoryNotUpload,
+        AlbumNotUpload,
+        ClipNotUpload
+    )
+    MediaUploadError = (PhotoNotUpload, VideoNotUpload, StoryNotUpload, AlbumNotUpload, ClipNotUpload)
+except ImportError:
+    # Fallback for older/different instagrapi versions
+    MediaUploadError = (ClientError,)
+
 import json
 import base64
 import hashlib
@@ -601,29 +615,23 @@ async def _get_user_state(user_id):
         return decrypt_data(state["data_encrypted"])
     return state.get("data", {}) if state else {}
 
-# Use a global set to track visited objects to prevent recursion
 _visited = set()
-
 def clean_object(obj):
     if id(obj) in _visited:
         return "<...circular_reference...>"
     _visited.add(id(obj))
     
-    if hasattr(obj, '__dict__'):
-        result = {k: clean_object(v) for k, v in obj.__dict__.items()}
-        _visited.discard(id(obj))
-        return result
+    if isinstance(obj, dict):
+        result = {k: clean_object(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         result = [clean_object(item) for item in obj]
-        _visited.discard(id(obj))
-        return result
-    elif isinstance(obj, dict):
-        result = {k: clean_object(v) for k, v in obj.items()}
-        _visited.discard(id(obj))
-        return result
+    elif hasattr(obj, '__dict__'):
+        result = {k: clean_object(v) for k, v in obj.__dict__.items()}
     else:
-        _visited.discard(id(obj))
-        return obj
+        result = obj
+    
+    _visited.discard(id(obj))
+    return result
 
 async def _save_user_state(user_id, state_data):
     if db is None: return
