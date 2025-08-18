@@ -1106,32 +1106,61 @@ def apply_text_watermark(file_path, user_settings):
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             
-            padding = int(width * 0.02)
-            positions = {
-                "top_left": (padding, padding),
-                "top_center": ((width - text_width) / 2, padding),
-                "top_right": (width - text_width - padding, padding),
-                "mid_left": (padding, (height - text_height) / 2),
-                "center": ((width - text_width) / 2, (height - text_height) / 2),
-                "mid_right": (width - text_width - padding, (height - text_height) / 2),
-                "bottom_left": (padding, height - text_height - padding),
-                "bottom_center": ((width - text_width) / 2, height - text_height - padding),
-                "bottom_right": (width - text_width - padding, height - text_height - padding)
-            }
-            x, y = positions.get(position, positions["bottom_right"])
+            padding = int(width * 0.02)def apply_text_watermark(file_path, user_settings):
+    settings = user_settings.get("watermark_settings", {})
+    text = settings.get("text", "")
+    if not text:
+        return file_path
 
-            color_tuple = tuple(int(color[i:i+2], 16) for i in (0, 2, 4))
-            alpha = int(255 * opacity)
-            draw.text((x, y), text, font=font, fill=color_tuple + (alpha,))
-            
-            temp_path = f"watermarked_{os.path.basename(file_path)}"
-            output_format = 'PNG' if file_path.lower().endswith('.png') else 'JPEG'
-            img = img.convert('RGB')
-            img.save(temp_path, format=output_format)
+    opacity = settings.get("opacity", 0.5)
+    size_ratio = settings.get("size", 0.05)
+    font_file = settings.get("font", "arial.ttf")
+    position = settings.get("position", "bottom_right")
+    color = settings.get("text_color", "#FFFFFF").lstrip('#')
+    
+    is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.mkv', '.webm'])
+
+    if not os.path.exists(font_file):
+        logger.warning(f"Font file '{font_file}' not found. Using a default system font might be necessary.")
+    
+    # വീഡിയോ ആണെങ്കിൽ ഈ ഭാഗം പ്രവർത്തിക്കും
+    if is_video:
+        temp_path = f"watermarked_{os.path.basename(file_path)}"
+        font_size = f"h*{size_ratio}"
+
+        position_map = {
+            "top_left": "x=10:y=10",
+            "top_center": "x=(w-text_w)/2:y=10",
+            "top_right": "x=w-text_w-10:y=10",
+            "mid_left": "x=10:y=(h-text_h)/2",
+            "center": "x=(w-text_w)/2:y=(h-text_h)/2",
+            "mid_right": "x=w-text_w-10:y=(h-text_h)/2",
+            "bottom_left": "x=10:y=h-text_h-10",
+            "bottom_center": "x=(w-text_w)/2:y=h-text_h-10",
+            "bottom_right": "x=w-text_w-10:y=h-text_h-10"
+        }
+        
+        clean_text = text.replace("'", "").replace(":", "\\:")
+        ffmpeg_filter = f"drawtext=text='{clean_text}':fontfile='{font_file}':fontsize={font_size}:fontcolor={color}@{opacity}:{position_map.get(position, 'x=w-text_w-10:y=h-text_h-10')}"
+        
+        command = [
+            'ffmpeg', '-y', '-i', file_path,
+            '-vf', ffmpeg_filter,
+            '-c:a', 'copy',
+            '-preset', 'fast',
+            temp_path
+        ]
+        
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            logger.info(f"FFmpeg text watermark applied successfully to {temp_path}")
             return temp_path
-        except Exception as e:
-            logger.error(f"Error applying text watermark to image: {e}")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg text watermark failed for video: {e.stderr}")
             return file_path
+    
+    # വീഡിയോ അല്ലെങ്കിൽ (ചിത്രം ആണെങ്കിൽ) ഈ 'else' ഭാഗം പ്രവർത്തിക്കും
+    else:
         try:
             img = Image.open(file_path).convert("RGBA")
             width, height = img.size
@@ -1167,9 +1196,9 @@ def apply_text_watermark(file_path, user_settings):
             draw.text((x, y), text, font=font, fill=color_tuple + (alpha,))
             
             temp_path = f"watermarked_{os.path.basename(file_path)}"
-            # PNG ആയി സേവ് ചെയ്യുന്നത് നല്ലതാണ്, പക്ഷേ ഒറിജിനൽ ഫോർമാറ്റ് നിലനിർത്താം
             output_format = 'PNG' if file_path.lower().endswith('.png') else 'JPEG'
-            img.convert('RGB').save(temp_path, format=output_format)
+            img = img.convert('RGB')
+            img.save(temp_path, format=output_format)
             return temp_path
         except Exception as e:
             logger.error(f"Error applying text watermark to image: {e}")
