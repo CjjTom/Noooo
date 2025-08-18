@@ -1032,55 +1032,102 @@ def fix_for_instagram(input_file: str, output_file: str) -> str:
         raise ValueError(f"Video format is incompatible and conversion failed. Error: {e.stderr}")
 
 
-def apply_watermark(file_path, user_settings):
-    """Applies either a text or image watermark to an image or video."""
-    watermark_settings = user_settings.get("watermark_settings", {})
-    if not watermark_settings.get("enabled") or global_settings.get("force_disable_watermark"):
-        return file_path
-
-    watermark_type = watermark_settings.get("type")
-    
-    if watermark_type == "text":
-        return apply_text_watermark(file_path, user_settings)
-    elif watermark_type == "image":
-        return apply_image_watermark(file_path, user_settings)
-    
-    return file_path
-
-
 def apply_text_watermark(file_path, user_settings):
-    text = user_settings.get("watermark_settings", {}).get("text", "")
-    opacity = user_settings.get("watermark_settings", {}).get("opacity", 0.5)
-    size = user_settings.get("watermark_settings", {}).get("size", 0.05)
-    font_file = user_settings.get("watermark_settings", {}).get("font", "arial.ttf")
-
+    settings = user_settings.get("watermark_settings", {})
+    text = settings.get("text", "")
     if not text:
         return file_path
 
-    is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.webm', '.mkv'])
+    opacity = settings.get("opacity", 0.5)
+    size_ratio = settings.get("size", 0.05)
+    font_file = settings.get("font", "arial.ttf")
+    position = settings.get("position", "bottom_right")
+    color = settings.get("text_color", "#FFFFFF").lstrip('#')
+    
+    # ഈ ഫംഗ്ഷൻ വീഡിയോകൾക്കും ചിത്രങ്ങൾക്കും പ്രവർത്തിക്കും
+    is_video = any(file_path.lower().endswith(ext) for ext in ['.mp4', '.mov', '.mkv', '.webm'])
+
+    if not os.path.exists(font_file):
+        logger.warning(f"Font file '{font_file}' not found. Using a default system font might be necessary.")
+        # ഒരു ഡിഫോൾട്ട് ഫോണ്ട് പാത്ത് നൽകുന്നത് നല്ലതാണ്, ഉദാഹരണത്തിന്:
+        # font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     
     if is_video:
-        temp_path = f"watermarked_video_{os.path.basename(file_path)}"
+        temp_path = f"watermarked_{os.path.basename(file_path)}"
+        font_size = f"h*{size_ratio}" # വീഡിയോയുടെ ഉയരം അനുസരിച്ച് ഫോണ്ട് സൈസ് ക്രമീകരിക്കുന്നു
+
+        # FFmpeg-ന് വേണ്ടിയുള്ള പൊസിഷൻ ക്രമീകരണങ്ങൾ
+        position_map = {
+            "top_left": "x=10:y=10",
+            "top_center": "x=(w-text_w)/2:y=10",
+            "top_right": "x=w-text_w-10:y=10",
+            "mid_left": "x=10:y=(h-text_h)/2",
+            "center": "x=(w-text_w)/2:y=(h-text_h)/2",
+            "mid_right": "x=w-text_w-10:y=(h-text_h)/2",
+            "bottom_left": "x=10:y=h-text_h-10",
+            "bottom_center": "x=(w-text_w)/2:y=h-text_h-10",
+            "bottom_right": "x=w-text_w-10:y=h-text_h-10"
+        }
+        
+        # FFmpeg കമാൻഡ് ഉപയോഗിച്ച് വാട്ടർമാർക്ക് ചേർക്കുന്നു
+        command = [
+            'ffmpeg', '-y', '-i', file_path,
+            '-vf', f"drawtext=text='{text.replace(':', '\\\\:').replace('\'', '')}':fontfile='{font_file}':fontsize={font_size}:fontcolor={color}@{opacity}:{position_map.get(position, 'x=w-text_w-10:y=h-text_h-10')}",
+            '-c:a', 'copy',
+            '-preset', 'fast',
+            temp_path
+        ]
+        
         try:
-            clip = VideoFileClip(file_path)
-            font_size = int(clip.h * size)
-            text_color = user_settings.get("watermark_settings", {}).get("text_color", "white")
-            position = user_settings.get("watermark_settings", {}).get("position", "bottom_right")
+            subprocess.run(command, check=True, capture_output=True, text=True)
+            logger.info(f"FFmpeg text watermark applied successfully to {temp_path}")
+            return temp_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg text watermark failed for video: {e.stderr}")
+            return file_path # പരാജയപ്പെട്ടാൽ പഴയ ഫയൽ തന്നെ റിട്ടേൺ ചെയ്യുന്നു
+    else:
+        # ചിത്രങ്ങൾക്ക് പഴയ രീതി തന്നെ മതി, അത് വേഗതയുള്ളതാണ്
+        try:
+            img = Image.open(file_path).convert("RGBA")
+            width, height = img.size
             
+            font_size = int(height * size_ratio)
+            try:
+                font = ImageFont.truetype(font_file, font_size)
+            except IOError:
+                logger.warning(f"Font file '{font_file}' not found. Using default font.")
+                font = ImageFont.load_default()
+
+            draw = ImageDraw.Draw(img, 'RGBA')
+            text_bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+            
+            padding = int(width * 0.02)
             positions = {
-                "top_left": (20, 20), "top_center": ('center', 20), "top_right": ('right', 20),
-                "mid_left": (20, 'center'), "center": ('center', 'center'), "mid_right": ('right', 'center'),
-                "bottom_left": (20, 'bottom'), "bottom_center": ('center', 'bottom'), "bottom_right": ('right', 'bottom')
+                "top_left": (padding, padding),
+                "top_center": ((width - text_width) / 2, padding),
+                "top_right": (width - text_width - padding, padding),
+                "mid_left": (padding, (height - text_height) / 2),
+                "center": ((width - text_width) / 2, (height - text_height) / 2),
+                "mid_right": (width - text_width - padding, (height - text_height) / 2),
+                "bottom_left": (padding, height - text_height - padding),
+                "bottom_center": ((width - text_width) / 2, height - text_height - padding),
+                "bottom_right": (width - text_width - padding, height - text_height - padding)
             }
-            final_position = positions.get(position, ('right', 'bottom'))
+            x, y = positions.get(position, positions["bottom_right"])
 
-            txt_clip = TextClip(text, fontsize=font_size, color=text_color, font=font_file).set_duration(clip.duration).set_opacity(opacity)
-            final_video = CompositeVideoClip([clip, txt_clip.set_position(final_position)])
-
-            final_video.write_videofile(temp_path, codec="libx264", audio_codec="aac", temp_audiofile="temp-audio.m4a", remove_temp=True)
+            color_tuple = tuple(int(color[i:i+2], 16) for i in (0, 2, 4))
+            alpha = int(255 * opacity)
+            draw.text((x, y), text, font=font, fill=color_tuple + (alpha,))
+            
+            temp_path = f"watermarked_{os.path.basename(file_path)}"
+            # PNG ആയി സേവ് ചെയ്യുന്നത് നല്ലതാണ്, പക്ഷേ ഒറിജിനൽ ഫോർമാറ്റ് നിലനിർത്താം
+            output_format = 'PNG' if file_path.lower().endswith('.png') else 'JPEG'
+            img.convert('RGB').save(temp_path, format=output_format)
             return temp_path
         except Exception as e:
-            logger.error(f"Error applying text watermark to video: {e}")
+            logger.error(f"Error applying text watermark to image: {e}")
             return file_path
     else:
         try:
