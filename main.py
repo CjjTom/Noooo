@@ -1210,7 +1210,7 @@ async def start(_, msg):
             "✅ Ultra-fast uploading & High Quality\n"
             "✅ No file size limit & unlimited uploads\n"
             "✅ Instagram Support\n\n"
-            "👤 Contact Admin → [Admin Tom](https://t.me/CjjTom) to get premium\n"
+            "👤 Contact Admin → [Admin Tom](https://t.me/CjjTom)** to get premium\n"
             "🔐 Your data is fully encrypted\n\n"
             f"🆔 Your ID: `{user_id}`"
         )
@@ -2710,7 +2710,7 @@ async def admin_logout_cb(_, query):
 async def reset_user_settings_cb(_, query):
     user_id = query.from_user.id
     
-    await safe_edit_message(query.message, "⚠️ **WARNING!** " + to_bold_sans("This Will Reset All Your Bot-specific Settings To Default (e.g., caption, hashtags, watermark). Are You Sure?"),
+    await safe_edit_message(query.message, "⚠️ **Warning!** " + to_bold_sans("This Will Reset All Your Bot-specific Settings To Default (e.g., caption, hashtags, watermark). Are You Sure?"),
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Yes, Reset Settings", callback_data="confirm_reset_user_settings")],
             [InlineKeyboardButton("❌ No, Cancel", callback_data="hub_settings_instagram")]
