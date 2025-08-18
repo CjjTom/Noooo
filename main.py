@@ -2564,7 +2564,8 @@ async def activate_trial_instagram_cb(_, query):
         "added_at": datetime.utcnow(), "until": premium_until,
         "status": "active" # Set status on grant
     }
-   await _save_user_data(user_id, {"premium": user_premium_data})
+    # ഈ വരിയുടെ മുന്നിലെ സ്പേസ് ശരിയാക്കിയിരിക്കുന്നു
+    await _save_user_data(user_id, {"premium": user_premium_data})
 
     logger.info(f"User {user_id} activated a 6-hour Instagram trial.")
     await send_log_to_channel(app, LOG_CHANNEL, f"✨ User `{user_id}` activated a 6-hour Instagram trial.")
