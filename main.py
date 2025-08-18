@@ -3566,6 +3566,8 @@ async def start_bot():
 # === MAIN ENTRYPOINT ===
 if __name__ == "__main__":
     try:
-        asyncio.run(start_bot())
+        app.run(start_bot())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Bot stopped manually.")
+        logger.info("Shutdown signal received.")
+    except Exception as e:
+        logger.critical(f"Bot crashed during startup: {e}", exc_info=True)
