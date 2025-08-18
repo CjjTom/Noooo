@@ -1260,7 +1260,6 @@ def apply_image_watermark(file_path, user_settings):
         except Exception as e:
             logger.error(f"Error applying image watermark to image: {e}")
             return file_path
-    else:
         try:
             base_image = Image.open(file_path).convert("RGBA")
             watermark_image = Image.open(temp_watermark_path).convert("RGBA")
