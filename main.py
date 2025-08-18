@@ -1622,7 +1622,7 @@ async def handle_text_input(_, msg):
         password = msg.text
         login_msg = await msg.reply("🔐 " + to_bold_sans("Attempting Instagram Login..."))
         
-       async def login_task():
+        async def login_task():
             user_insta_client = InstaClient()
             user_insta_client.delay_range = [1, 3]
             proxy_url = global_settings.get("proxy_url")
@@ -1637,7 +1637,9 @@ async def handle_text_input(_, msg):
                 user_settings["active_ig_username"] = username
                 await save_user_settings(user_id, user_settings)
                 
-                await safe_edit_message(login_msg, "Instagram Login Successful For @{username}!"))
+                # Corrected f-string and function call
+                await safe_edit_message(login_msg, f"✅ " + to_bold_sans(f"Instagram Login Successful For @{username}!"))
+                
                 log_text = (
                     f"📝 New Instagram Login\nUser: `{user_id}`\n"
                     f"Username: `{msg.from_user.username or 'N/A'}`\n"
@@ -1650,12 +1652,9 @@ async def handle_text_input(_, msg):
                 await safe_edit_message(login_msg, "🔐 " + to_bold_sans("Challenge Required. Please Complete It In The Instagram App And Try Again."))
                 logger.warning(f"Instagram Challenge Required for user {user_id} ({username}).")
             
-            # --- THIS IS THE MODIFIED PART ---
             except (BadPassword, LoginRequired, UnknownError) as e:
-                # We added UnknownError here to catch the "user not found" issue
                 await safe_edit_message(login_msg, f"❌ " + to_bold_sans(f"Login Failed. Please Check Your Username and Password and try again."))
                 logger.error(f"Instagram Login Failed for user {user_id} ({username}): {e}")
-            # ------------------------------------
 
             except PleaseWaitFewMinutes:
                 await safe_edit_message(login_msg, "⚠️ " + to_bold_sans("Instagram Is Asking To Wait A Few Minutes. Please Try Again Later."))
@@ -1664,7 +1663,8 @@ async def handle_text_input(_, msg):
                 await safe_edit_message(login_msg, f"❌ " + to_bold_sans(f"An Unexpected Error Occurred: {str(e)}"))
                 logger.error(f"Unhandled error during Instagram login for {user_id} ({username}): {str(e)}", exc_info=True)
             finally:
-                await _clear_user_state(user_id)        
+                await _clear_user_state(user_id)
+        
         task_tracker.create_task(safe_task_wrapper(login_task()), user_id=user_id, task_name="login_instagram")
         return
 
